@@ -12,6 +12,7 @@ jobs:
 
     permissions:
       contents: write
+      issues: write
 
     steps:
       - name: Checkout repository
@@ -25,6 +26,24 @@ jobs:
       - name: Run review script
         run: python scripts/review.py
 
+      - name: Create or update daily review issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_TITLE="📚 Daily LeetCode Review — $(date -u '+%Y-%m-%d')"
+          ISSUE_BODY=$(python scripts/issue_formatter.py)
+
+          # Check whether an open issue with this title already exists
+          EXISTING=$(gh issue list --state open --search "$ISSUE_TITLE" --json number --jq '.[0].number // ""')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body "$ISSUE_BODY"
+            echo "Updated existing issue #$EXISTING"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+            echo "Created new issue: $ISSUE_TITLE"
+          fi
+
       - name: Commit updated review metadata
         run: |
           git config user.name "github-actions[bot]"
@@ -33,3 +52,4 @@ jobs:
           # Only commit when there are actual changes
           git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
           git push
+
