@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 # Allow running from repo root without installing a package
@@ -43,6 +44,7 @@ from scheduler import days_overdue, is_due, new_entry, schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
+_SOLUTION_EXTENSIONS = {".py", ".js", ".ts", ".java", ".cpp", ".cs", ".go", ".rs", ".kt", ".swift", ".sql"}
 
 # ---------------------------------------------------------------------------
 # JSON helpers
@@ -68,6 +70,45 @@ def _save_reviews(reviews: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _problem_solution_files(repo_root: Path, meta: dict, problem_id: str) -> list[Path]:
+    problem_dir = repo_root / meta["topic"] / problem_id
+    if not problem_dir.is_dir():
+        return []
+    return sorted(
+        path for path in problem_dir.iterdir() if path.is_file() and path.suffix in _SOLUTION_EXTENSIONS
+    )
+
+
+def _first_commit_date(repo_root: Path, solution_file: Path) -> date | None:
+    result = subprocess.run(
+        ["git", "log", "--follow", "--diff-filter=A", "--format=%aI", "--", str(solution_file)],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+
+    timestamps = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not timestamps:
+        return None
+
+    try:
+        return datetime.fromisoformat(timestamps[-1]).date()
+    except ValueError:
+        return None
+
+
+def _new_problem_base_date(repo_root: Path, problem_id: str, meta: dict, today: date) -> date:
+    commit_dates = [
+        commit_date
+        for solution_file in _problem_solution_files(repo_root, meta, problem_id)
+        if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
+    ]
+    return min(commit_dates, default=today)
+
+
 def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict, list[str]]:
     """
     Add any newly discovered problems to *reviews*.
@@ -79,7 +120,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
 
     for problem_id, meta in discovered.items():
         if problem_id not in reviews:
-            entry = new_entry(today)
+            entry = new_entry(_new_problem_base_date(repo_root, problem_id, meta, today))
             # Override defaults with discovered metadata, but do *not*
             # overwrite any user-set difficulty/topic already in reviews.json.
             entry["difficulty"] = meta["difficulty"]
