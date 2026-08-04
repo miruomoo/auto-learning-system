@@ -1,4 +1,4 @@
-# Python Practice Solutions
+# Auto Learning System
 
 > Synced automatically from [NeetCode.io](https://neetcode.io) · Repository: `python-problems`
 
