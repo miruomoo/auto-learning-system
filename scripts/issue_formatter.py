@@ -69,6 +69,8 @@ def _sync(reviews: dict, today: date) -> dict:
 
 _DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
 
+_MAX_DAILY = 3
+
 
 def _sort_key(item: tuple[str, dict], today: date):
     problem_id, entry = item
@@ -107,7 +109,10 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
 
-    if not due_items:
+    shown_items = due_items[:_MAX_DAILY]
+    deferred_items = due_items[_MAX_DAILY:]
+
+    if not shown_items:
         body = (
             f"## 📚 Today's LeetCode Reviews — {today.isoformat()}\n\n"
             "✅ No reviews scheduled for today. Come back tomorrow!"
@@ -119,7 +124,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     # mapping: 1-based number -> problem_id (stored as JSON in the issue)
     problem_map: dict[str, str] = {}
 
-    for idx, (problem_id, entry) in enumerate(due_items, start=1):
+    for idx, (problem_id, entry) in enumerate(shown_items, start=1):
         diff = entry.get("difficulty", "Unknown")
         topic = entry.get("topic", "Unknown")
         emoji = _DIFFICULTY_EMOJI.get(diff, "⚪")
@@ -138,9 +143,38 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     # Hidden JSON block for the comment parser
     map_json = json.dumps(problem_map)
 
+    # Summary line: how many shown vs total due
+    total_due = len(due_items)
+    shown_count = len(shown_items)
+    if total_due > shown_count:
+        summary_line = (
+            f"Showing {shown_count} of {total_due} problems due today "
+            f"(most overdue / hardest first). "
+            f"The remaining {total_due - shown_count} will appear in tomorrow's issue."
+        )
+    else:
+        summary_line = f"{shown_count} problem(s) due today."
+
+    # Optional deferred section
+    if deferred_items:
+        deferred_lines = [
+            f"- {_display_name(pid)} "
+            f"({entry.get('difficulty', 'Unknown')}, "
+            f"{_due_label(entry, today)})"
+            for pid, entry in deferred_items
+        ]
+        deferred_section = (
+            "\n\n---\n\n"
+            "### ⏭️ Deferred to Tomorrow\n\n"
+            "These problems are also due but will be shown in the next daily issue:\n\n"
+            + "\n".join(deferred_lines)
+        )
+    else:
+        deferred_section = ""
+
     body = f"""## 📚 Today's LeetCode Reviews — {today.isoformat()}
 
-{len(due_items)} problem(s) due today.
+{summary_line}
 
 ---
 
@@ -165,13 +199,13 @@ review 3 forgot
 
 ### Today's Problems
 
-{problems_section}
+{problems_section}{deferred_section}
 
 ---
 
 <!-- problem-map: {map_json} -->"""
 
-    return body, due_items
+    return body, shown_items
 
 
 def main() -> None:
