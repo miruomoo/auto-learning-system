@@ -1160,6 +1160,15 @@
     "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
+  "target-sum": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": null,
+    "next_review": "2026-08-05",
+    "review_count": 0,
+    "topic": "Data Structures & Algorithms"
+  },
   "task-scheduling": {
     "difficulty": "Medium",
     "ease_factor": 2.5,
