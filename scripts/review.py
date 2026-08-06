@@ -44,6 +44,7 @@ from scheduler import days_overdue, is_due, new_entry, schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
+_CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 _SOLUTION_EXTENSIONS = {".py", ".js", ".ts", ".java", ".cpp", ".cs", ".go", ".rs", ".kt", ".swift", ".sql"}
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,23 @@ def _save_reviews(reviews: dict) -> None:
     with _REVIEWS_PATH.open("w") as fh:
         json.dump(reviews, fh, indent=2, sort_keys=True)
         fh.write("\n")
+
+
+def _load_config() -> dict:
+    """Load .leetcode-review/config.json, returning sensible defaults if missing."""
+    defaults = {
+        "system_start_date": None,
+        "auto_forgot_after_days": 14,
+        "daily_show_limit": 3,
+    }
+    if not _CONFIG_PATH.exists():
+        return defaults
+    try:
+        with _CONFIG_PATH.open() as fh:
+            data = json.load(fh)
+        return {**defaults, **data}
+    except (json.JSONDecodeError, OSError):
+        return defaults
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +124,10 @@ def _new_problem_base_date(repo_root: Path, problem_id: str, meta: dict, today: 
         for solution_file in _problem_solution_files(repo_root, meta, problem_id)
         if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
     ]
+    # Falls back to today when git history is unavailable (e.g. shallow clone).
+    # In that case the problem will pass the system_start_date cutoff and be
+    # registered — intentionally permissive so genuine new submissions aren't
+    # silently dropped when history can't be read.
     return min(commit_dates, default=today)
 
 
@@ -113,14 +135,28 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
     """
     Add any newly discovered problems to *reviews*.
 
+    Problems whose first-commit date is before the configured system_start_date
+    are skipped entirely so pre-existing solutions don't flood the queue.
+
     Returns (updated_reviews, list_of_new_problem_ids).
     """
+    config = _load_config()
+    system_start_date: date | None = None
+    if config.get("system_start_date"):
+        try:
+            system_start_date = date.fromisoformat(config["system_start_date"])
+        except ValueError:
+            system_start_date = None
+
     discovered = discover_problems(repo_root)
     new_ids: list[str] = []
 
     for problem_id, meta in discovered.items():
         if problem_id not in reviews:
-            entry = new_entry(_new_problem_base_date(repo_root, problem_id, meta, today))
+            base_date = _new_problem_base_date(repo_root, problem_id, meta, today)
+            if system_start_date is not None and base_date < system_start_date:
+                continue
+            entry = new_entry(base_date)
             # Override defaults with discovered metadata, but do *not*
             # overwrite any user-set difficulty/topic already in reviews.json.
             entry["difficulty"] = meta["difficulty"]
@@ -192,12 +228,29 @@ def run_daily(today: date | None = None) -> None:
     if today is None:
         today = date.today()
 
+    config = _load_config()
+    auto_forgot_after_days: int = config.get("auto_forgot_after_days", 14)
+
     reviews = _load_reviews()
     reviews, new_ids = sync_new_problems(reviews, _REPO_ROOT, today)
+
+    # Auto-forgot sweep: problems overdue beyond the threshold are penalised
+    # automatically so the queue doesn't grow without bound.
+    auto_forgot_ids: list[str] = []
+    for problem_id, entry in reviews.items():
+        if days_overdue(entry, today) > auto_forgot_after_days:
+            reviews[problem_id] = schedule(entry, "Forgot", today)
+            auto_forgot_ids.append(problem_id)
+
     _save_reviews(reviews)
 
     if new_ids:
         print(f"🆕 Registered {len(new_ids)} new problem(s): {', '.join(sorted(new_ids))}\n")
+    if auto_forgot_ids:
+        print(
+            f"⚠️  Auto-marked {len(auto_forgot_ids)} problem(s) as Forgot "
+            f"(overdue > {auto_forgot_after_days} days): {', '.join(sorted(auto_forgot_ids))}\n"
+        )
 
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
