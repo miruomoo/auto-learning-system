@@ -69,7 +69,19 @@ def _sync(reviews: dict, today: date) -> dict:
 
 _DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
 
-_MAX_DAILY = 3
+_CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
+
+
+def _load_config() -> dict:
+    defaults = {"daily_show_limit": 3}
+    if not _CONFIG_PATH.exists():
+        return defaults
+    try:
+        with _CONFIG_PATH.open() as fh:
+            data = json.load(fh)
+        return {**defaults, **data}
+    except (json.JSONDecodeError, OSError):
+        return defaults
 
 
 def _sort_key(item: tuple[str, dict], today: date):
@@ -109,8 +121,9 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
 
-    shown_items = due_items[:_MAX_DAILY]
-    deferred_items = due_items[_MAX_DAILY:]
+    max_daily: int = _load_config()["daily_show_limit"]
+    shown_items = due_items[:max_daily]
+    deferred_items = due_items[max_daily:]
 
     if not shown_items:
         body = (
