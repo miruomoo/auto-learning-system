@@ -226,11 +226,11 @@
   },
   "count-subsequences": {
     "difficulty": "Medium",
-    "ease_factor": 2.5,
+    "ease_factor": 2.3,
     "interval": 1,
-    "last_review": null,
-    "next_review": "2026-08-11",
-    "review_count": 0,
+    "last_review": "2026-08-12",
+    "next_review": "2026-08-13",
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "counting-bits": {
