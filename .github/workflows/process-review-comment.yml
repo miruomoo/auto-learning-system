@@ -24,6 +24,7 @@ jobs:
           python-version: "3.12"
 
       - name: Process review comment
+        id: review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REVIEW_COMMENT_BODY: ${{ github.event.comment.body }}
@@ -39,3 +40,12 @@ jobs:
           git add .leetcode-review/reviews.json
           git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
           git push
+
+      - name: Close issue if all problems reviewed
+        if: steps.review.outputs.all_reviewed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue close ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --comment "🎉 All problems reviewed for today! Closing this issue."
