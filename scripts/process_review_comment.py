@@ -303,6 +303,22 @@ def main() -> None:
         print(f"Error posting comment: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    # 6. Signal whether all problems have been reviewed today
+    reviewed_today = set()
+    for problem_id in problem_map.values():
+        entry = reviews.get(problem_id, {})
+        last = entry.get("last_reviewed")
+        if last == today.isoformat():
+            reviewed_today.add(problem_id)
+
+    all_done = reviewed_today >= set(problem_map.values())
+
+    # Write to GITHUB_OUTPUT so the workflow can act on it
+    github_output = os.environ.get("GITHUB_OUTPUT", "")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"all_reviewed={'true' if all_done else 'false'}\n")
+
 
 if __name__ == "__main__":
     main()
