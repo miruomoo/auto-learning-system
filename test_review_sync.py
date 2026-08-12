@@ -313,6 +313,218 @@ class SyncNewProblemsTests(unittest.TestCase):
         self.assertEqual(reviews["some-problem"]["review_count"], count_after_first)
         self.assertEqual(reviews["some-problem"]["next_review"], next_review_after_first)
 
+    # ------------------------------------------------------------------
+    # Pruning of stale entries (retroactive system_start_date enforcement)
+    # ------------------------------------------------------------------
+
+    def test_stale_entry_no_history_before_start_date_is_pruned(self):
+        """Pre-seeded entry with no review history is removed when its commit predates system_start_date."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {
+            "old-seeded": {
+                "difficulty": "Easy",
+                "ease_factor": 2.5,
+                "interval": 1,
+                "last_review": None,
+                "next_review": "2026-08-12",
+                "review_count": 0,
+                "topic": "Data Structures & Algorithms",
+            }
+        }
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(
+                review,
+                "_problem_solution_files",
+                return_value=[repo_root / "old-seeded" / "s.py"],
+            ),
+            patch.object(review, "_first_commit_date", return_value=date(2026, 7, 1)),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": "2026-08-06",
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertNotIn("old-seeded", updated)
+        self.assertEqual(new_ids, [])
+
+    def test_stale_entry_with_review_history_is_preserved(self):
+        """Entry with review_count > 0 is never pruned regardless of commit date."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {
+            "coin-change-ii": {
+                "difficulty": "Medium",
+                "ease_factor": 2.65,
+                "interval": 3,
+                "last_review": "2026-08-10",
+                "next_review": "2026-08-13",
+                "review_count": 2,
+                "topic": "Data Structures & Algorithms",
+            }
+        }
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": "2026-08-06",
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertIn("coin-change-ii", updated)
+        self.assertEqual(updated["coin-change-ii"]["review_count"], 2)
+
+    def test_stale_entry_last_review_not_null_is_preserved(self):
+        """Entry with last_review set (even review_count == 0) is never pruned."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {
+            "some-problem": {
+                "difficulty": "Easy",
+                "ease_factor": 2.5,
+                "interval": 1,
+                "last_review": "2026-08-07",
+                "next_review": "2026-08-08",
+                "review_count": 0,
+                "topic": "Data Structures & Algorithms",
+            }
+        }
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": "2026-08-06",
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertIn("some-problem", updated)
+
+    def test_no_system_start_date_skips_pruning(self):
+        """When system_start_date is None, no pruning occurs and fallback to today works."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {
+            "old-seeded": {
+                "difficulty": "Easy",
+                "ease_factor": 2.5,
+                "interval": 1,
+                "last_review": None,
+                "next_review": "2026-08-12",
+                "review_count": 0,
+                "topic": "Data Structures & Algorithms",
+            }
+        }
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": None,
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertIn("old-seeded", updated)
+
+    def test_no_commit_dates_with_system_start_date_skips_new_problem(self):
+        """When git history is unavailable and system_start_date is set, new problems are skipped."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {}
+        discovered = {
+            "mystery-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Hard"},
+        }
+        with (
+            patch.object(review, "discover_problems", return_value=discovered),
+            patch.object(review, "_problem_solution_files", return_value=[repo_root / "mystery-problem" / "s.py"]),
+            patch.object(review, "_first_commit_date", return_value=None),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": "2026-08-06",
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertNotIn("mystery-problem", updated)
+        self.assertEqual(new_ids, [])
+
+    def test_no_commit_dates_without_system_start_date_falls_back_to_today(self):
+        """When git history is unavailable and no system_start_date, problem is registered with today."""
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {}
+        discovered = {
+            "mystery-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Hard"},
+        }
+        with (
+            patch.object(review, "discover_problems", return_value=discovered),
+            patch.object(review, "_problem_solution_files", return_value=[repo_root / "mystery-problem" / "s.py"]),
+            patch.object(review, "_first_commit_date", return_value=None),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": None,
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertIn("mystery-problem", updated)
+        self.assertEqual(new_ids, ["mystery-problem"])
+        # next_review should be today + 1
+        self.assertEqual(updated["mystery-problem"]["next_review"], "2026-08-13")
+        today = date(2026, 8, 6)
+        # overdue > 14 days
+        entry = {
+            "difficulty": "Medium",
+            "ease_factor": 2.5,
+            "interval": 4,
+            "last_review": "2026-07-15",
+            "next_review": "2026-07-22",
+            "review_count": 2,
+            "topic": "Data Structures & Algorithms",
+        }
+        reviews = {"some-problem": dict(entry)}
+
+        config = {
+            "system_start_date": "2026-08-06",
+            "auto_forgot_after_days": 14,
+            "daily_show_limit": 3,
+        }
+
+        # First run
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
+            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
+        ):
+            review.run_daily(today)
+
+        ease_after_first = reviews["some-problem"]["ease_factor"]
+        count_after_first = reviews["some-problem"]["review_count"]
+        next_review_after_first = reviews["some-problem"]["next_review"]
+
+        # Second run on same day — next_review is now tomorrow so not overdue
+        with (
+            patch.object(review, "discover_problems", return_value={}),
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
+            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
+        ):
+            review.run_daily(today)
+
+        self.assertEqual(reviews["some-problem"]["ease_factor"], ease_after_first)
+        self.assertEqual(reviews["some-problem"]["review_count"], count_after_first)
+        self.assertEqual(reviews["some-problem"]["next_review"], next_review_after_first)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -118,17 +118,70 @@ def _first_commit_date(repo_root: Path, solution_file: Path) -> date | None:
         return None
 
 
-def _new_problem_base_date(repo_root: Path, problem_id: str, meta: dict, today: date) -> date:
+def _new_problem_base_date(
+    repo_root: Path,
+    problem_id: str,
+    meta: dict,
+    today: date,
+    system_start_date: date | None = None,
+) -> date | None:
+    """Return the earliest first-commit date across all solution files for *problem_id*.
+
+    Returns ``None`` when git history is unavailable AND ``system_start_date``
+    is configured — the caller should treat ``None`` as "skip this problem"
+    rather than registering it with an unverified date.  When no
+    ``system_start_date`` is configured the old behaviour (fall back to
+    ``today``) is preserved so the system stays permissive for repos without
+    the cutoff feature.
+    """
     commit_dates = [
         commit_date
         for solution_file in _problem_solution_files(repo_root, meta, problem_id)
         if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
     ]
-    # Falls back to today when git history is unavailable (e.g. shallow clone).
-    # In that case the problem will pass the system_start_date cutoff and be
-    # registered — intentionally permissive so genuine new submissions aren't
-    # silently dropped when history can't be read.
-    return min(commit_dates, default=today)
+    if not commit_dates:
+        if system_start_date is not None:
+            print(
+                f"⚠️  Could not determine first-commit date for '{problem_id}' "
+                "— skipping (git history unavailable).",
+                file=sys.stderr,
+            )
+            return None
+        return today
+    return min(commit_dates)
+
+
+def _prune_stale_entries(
+    reviews: dict,
+    repo_root: Path,
+    system_start_date: date,
+    today: date,
+) -> tuple[dict, list[str]]:
+    """Remove entries whose first-commit date precedes *system_start_date*.
+
+    Entries with real review history (``review_count > 0`` or ``last_review``
+    is not null) are always preserved — the user has intentionally been working
+    on them and we must not lose that progress.
+
+    Mutates *reviews* in-place and also returns it for convenience.
+    """
+    pruned: list[str] = []
+    to_remove: list[str] = []
+    for problem_id, entry in reviews.items():
+        # Never prune entries with real review history.
+        if entry.get("review_count", 0) > 0 or entry.get("last_review"):
+            continue
+
+        meta = {"topic": entry.get("topic", "Unknown"), "difficulty": entry.get("difficulty", "Unknown")}
+        base_date = _new_problem_base_date(repo_root, problem_id, meta, today, system_start_date)
+        if base_date is None or base_date < system_start_date:
+            to_remove.append(problem_id)
+
+    for problem_id in to_remove:
+        del reviews[problem_id]
+        pruned.append(problem_id)
+
+    return reviews, pruned
 
 
 def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict, list[str]]:
@@ -151,9 +204,22 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
     discovered = discover_problems(repo_root)
     new_ids: list[str] = []
 
+    # Retroactively prune entries that were seeded before the system was
+    # properly initialised (no review history, first-commit < system_start_date).
+    if system_start_date is not None:
+        reviews, pruned_ids = _prune_stale_entries(reviews, repo_root, system_start_date, today)
+        if pruned_ids:
+            print(
+                f"🗑️  Pruned {len(pruned_ids)} stale entry/entries seeded before "
+                f"system_start_date ({system_start_date.isoformat()}): "
+                f"{', '.join(sorted(pruned_ids))}\n"
+            )
+
     for problem_id, meta in discovered.items():
         if problem_id not in reviews:
-            base_date = _new_problem_base_date(repo_root, problem_id, meta, today)
+            base_date = _new_problem_base_date(repo_root, problem_id, meta, today, system_start_date)
+            if base_date is None:
+                continue
             if system_start_date is not None and base_date < system_start_date:
                 continue
             entry = new_entry(base_date)
