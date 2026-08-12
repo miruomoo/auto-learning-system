@@ -323,6 +323,15 @@
     "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
+  "edit-distance": {
+    "difficulty": "Hard",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": null,
+    "next_review": "2026-08-12",
+    "review_count": 0,
+    "topic": "Data Structures & Algorithms"
+  },
   "evaluate-reverse-polish-notation": {
     "difficulty": "Medium",
     "ease_factor": 2.5,
