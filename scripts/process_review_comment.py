@@ -307,7 +307,7 @@ def main() -> None:
     reviewed_today = set()
     for problem_id in problem_map.values():
         entry = reviews.get(problem_id, {})
-        last = entry.get("last_reviewed")
+        last = entry.get("last_review")
         if last == today.isoformat():
             reviewed_today.add(problem_id)
 
