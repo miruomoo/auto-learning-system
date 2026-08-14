@@ -118,6 +118,23 @@ def _first_commit_date(repo_root: Path, solution_file: Path) -> date | None:
         return None
 
 
+def _first_post_start_commit_date(
+    repo_root: Path,
+    problem_id: str,
+    meta: dict,
+    system_start_date: date,
+) -> date | None:
+    """Return the earliest commit date for *problem_id*'s solution files
+    that falls on or after *system_start_date*."""
+    commit_dates = [
+        commit_date
+        for solution_file in _problem_solution_files(repo_root, meta, problem_id)
+        if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
+        and commit_date >= system_start_date
+    ]
+    return min(commit_dates) if commit_dates else None
+
+
 def _new_problem_base_date(
     repo_root: Path,
     problem_id: str,
@@ -184,14 +201,14 @@ def _prune_stale_entries(
     return reviews, pruned
 
 
-def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict, list[str]]:
+def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict, list[str], list[str]]:
     """
     Add any newly discovered problems to *reviews*.
 
     Problems whose first-commit date is before the configured system_start_date
     are skipped entirely so pre-existing solutions don't flood the queue.
 
-    Returns (updated_reviews, list_of_new_problem_ids).
+    Returns (updated_reviews, list_of_new_problem_ids, list_of_backfilled_problem_ids).
     """
     config = _load_config()
     system_start_date: date | None = None
@@ -203,6 +220,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
 
     discovered = discover_problems(repo_root)
     new_ids: list[str] = []
+    backfilled_ids: list[str] = []
 
     # Retroactively prune entries that were seeded before the system was
     # properly initialised (no review history, first-commit < system_start_date).
@@ -237,7 +255,24 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
             if existing.get("difficulty") in (None, "Unknown"):
                 existing["difficulty"] = meta["difficulty"]
 
-    return reviews, new_ids
+            # Backfill last_review from the first post-start commit date if the
+            # problem has never been reviewed but was submitted after system start.
+            if (
+                system_start_date is not None
+                and existing.get("review_count", 0) == 0
+                and existing.get("last_review") is None
+            ):
+                submission_date = _first_post_start_commit_date(
+                    repo_root, problem_id, meta, system_start_date
+                )
+                if submission_date is not None:
+                    existing["last_review"] = submission_date.isoformat()
+                    existing["next_review"] = (
+                        submission_date + timedelta(days=existing.get("interval", 1))
+                    ).isoformat()
+                    backfilled_ids.append(problem_id)
+
+    return reviews, new_ids, backfilled_ids
 
 
 # ---------------------------------------------------------------------------
@@ -298,7 +333,7 @@ def run_daily(today: date | None = None) -> None:
     auto_forgot_after_days: int = config.get("auto_forgot_after_days", 14)
 
     reviews = _load_reviews()
-    reviews, new_ids = sync_new_problems(reviews, _REPO_ROOT, today)
+    reviews, new_ids, backfilled_ids = sync_new_problems(reviews, _REPO_ROOT, today)
 
     # Auto-forgot sweep: problems overdue beyond the threshold are penalised
     # automatically so the queue doesn't grow without bound.
@@ -312,6 +347,11 @@ def run_daily(today: date | None = None) -> None:
 
     if new_ids:
         print(f"🆕 Registered {len(new_ids)} new problem(s): {', '.join(sorted(new_ids))}\n")
+    if backfilled_ids:
+        print(
+            f"📅 Backfilled last_review for {len(backfilled_ids)} problem(s) from git history: "
+            f"{', '.join(sorted(backfilled_ids))}\n"
+        )
     if auto_forgot_ids:
         print(
             f"⚠️  Auto-marked {len(auto_forgot_ids)} problem(s) as Forgot "
