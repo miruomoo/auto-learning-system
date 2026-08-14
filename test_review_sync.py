@@ -38,9 +38,10 @@ class SyncNewProblemsTests(unittest.TestCase):
             ),
             patch.object(review, "_load_config", return_value={"system_start_date": None, "auto_forgot_after_days": 14, "daily_show_limit": 3}),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, ["two-sum"])
+        self.assertEqual(backfilled_ids, [])
         self.assertEqual(updated["two-sum"]["next_review"], "2026-07-29")
         self.assertEqual(updated["two-sum"]["difficulty"], "Easy")
         self.assertEqual(updated["two-sum"]["topic"], "Data Structures & Algorithms")
@@ -66,9 +67,10 @@ class SyncNewProblemsTests(unittest.TestCase):
             patch.object(review, "_first_commit_date", return_value=None),
             patch.object(review, "_load_config", return_value={"system_start_date": None, "auto_forgot_after_days": 14, "daily_show_limit": 3}),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, ["three-sum"])
+        self.assertEqual(backfilled_ids, [])
         self.assertEqual(updated["three-sum"]["next_review"], "2026-08-05")
 
     # ------------------------------------------------------------------
@@ -92,9 +94,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, [])
+        self.assertEqual(backfilled_ids, [])
         self.assertNotIn("old-problem", updated)
 
     def test_problem_on_system_start_date_is_registered(self):
@@ -114,9 +117,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, ["new-problem"])
+        self.assertEqual(backfilled_ids, [])
         self.assertIn("new-problem", updated)
 
     def test_problem_after_system_start_date_is_registered(self):
@@ -136,9 +140,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, ["newer-problem"])
+        self.assertEqual(backfilled_ids, [])
 
     def test_already_present_problem_not_removed_by_cutoff(self):
         """Problems already in reviews.json are untouched even if their commit predates the cutoff."""
@@ -166,11 +171,50 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertEqual(new_ids, [])
+        self.assertEqual(backfilled_ids, [])
         self.assertIn("coin-change-ii", updated)
         self.assertEqual(updated["coin-change-ii"]["review_count"], 1)
+
+    def test_existing_zero_review_problem_backfills_last_review_from_post_start_commit(self):
+        today = date(2026, 8, 12)
+        repo_root = Path("/repo")
+        reviews = {
+            "valid-problem": {
+                "difficulty": "Unknown",
+                "ease_factor": 2.5,
+                "interval": 3,
+                "last_review": None,
+                "next_review": "2026-08-12",
+                "review_count": 0,
+                "topic": "Unknown",
+            }
+        }
+        discovered = {
+            "valid-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Medium"},
+        }
+        with (
+            patch.object(review, "discover_problems", return_value=discovered),
+            patch.object(review, "_problem_solution_files", return_value=[repo_root / "valid-problem" / "s.py"]),
+            patch.object(review, "_first_commit_date", return_value=date(2026, 8, 8)),
+            patch.object(review, "_load_config", return_value={
+                "system_start_date": "2026-08-06",
+                "auto_forgot_after_days": 14,
+                "daily_show_limit": 3,
+            }),
+        ):
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+
+        self.assertEqual(new_ids, [])
+        self.assertEqual(backfilled_ids, ["valid-problem"])
+        self.assertEqual(updated["valid-problem"]["last_review"], "2026-08-08")
+        self.assertEqual(updated["valid-problem"]["next_review"], "2026-08-11")
+        self.assertEqual(updated["valid-problem"]["review_count"], 0)
+        self.assertEqual(updated["valid-problem"]["ease_factor"], 2.5)
+        self.assertEqual(updated["valid-problem"]["difficulty"], "Medium")
+        self.assertEqual(updated["valid-problem"]["topic"], "Data Structures & Algorithms")
 
     # ------------------------------------------------------------------
     # Auto-forgot sweep
@@ -346,10 +390,11 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertNotIn("old-seeded", updated)
         self.assertEqual(new_ids, [])
+        self.assertEqual(backfilled_ids, [])
 
     def test_stale_entry_with_review_history_is_preserved(self):
         """Entry with review_count > 0 is never pruned regardless of commit date."""
@@ -374,9 +419,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertIn("coin-change-ii", updated)
+        self.assertEqual(backfilled_ids, [])
         self.assertEqual(updated["coin-change-ii"]["review_count"], 2)
 
     def test_stale_entry_last_review_not_null_is_preserved(self):
@@ -402,9 +448,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertIn("some-problem", updated)
+        self.assertEqual(backfilled_ids, [])
 
     def test_no_system_start_date_skips_pruning(self):
         """When system_start_date is None, no pruning occurs and fallback to today works."""
@@ -429,9 +476,10 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertIn("old-seeded", updated)
+        self.assertEqual(backfilled_ids, [])
 
     def test_no_commit_dates_with_system_start_date_skips_new_problem(self):
         """When git history is unavailable and system_start_date is set, new problems are skipped."""
@@ -451,10 +499,11 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertNotIn("mystery-problem", updated)
         self.assertEqual(new_ids, [])
+        self.assertEqual(backfilled_ids, [])
 
     def test_no_commit_dates_without_system_start_date_falls_back_to_today(self):
         """When git history is unavailable and no system_start_date, problem is registered with today."""
@@ -474,10 +523,11 @@ class SyncNewProblemsTests(unittest.TestCase):
                 "daily_show_limit": 3,
             }),
         ):
-            updated, new_ids = review.sync_new_problems(reviews, repo_root, today)
+            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
 
         self.assertIn("mystery-problem", updated)
         self.assertEqual(new_ids, ["mystery-problem"])
+        self.assertEqual(backfilled_ids, [])
         # next_review should be today + 1
         self.assertEqual(updated["mystery-problem"]["next_review"], "2026-08-13")
         today = date(2026, 8, 6)
