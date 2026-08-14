@@ -145,11 +145,11 @@
   },
   "coin-change-ii": {
     "difficulty": "Medium",
-    "ease_factor": 2.65,
-    "interval": 3,
-    "last_review": "2026-08-10",
-    "next_review": "2026-08-13",
-    "review_count": 2,
+    "ease_factor": 2.8,
+    "interval": 8,
+    "last_review": "2026-08-14",
+    "next_review": "2026-08-22",
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "combination-target-sum": {
