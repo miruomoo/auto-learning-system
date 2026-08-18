@@ -230,6 +230,18 @@ review 3 forgot
 
 ---
 
+### ⏸️ Need a break?
+
+To pause the daily reviews, comment:
+
+```
+pause <days>
+```
+
+**Example:** `pause 7` freezes automation for 7 days (max 365). Reviews resume automatically when the pause expires.
+
+---
+
 ### Today's Problems
 
 {problems_section}{deferred_section}
