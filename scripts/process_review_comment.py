@@ -38,10 +38,17 @@ from scheduler import schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
+_CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 # Regex for one review command (case-insensitive, flexible whitespace)
 _REVIEW_RE = re.compile(
     r"^\s*review\s+(\d+)\s+(easy|medium|forgot)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Regex for pause command: pause <days> (1–365)
+_PAUSE_RE = re.compile(
+    r"^\s*pause\s+(\d+)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -113,6 +120,30 @@ def _save_reviews(reviews: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# config.json helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_config() -> dict:
+    defaults: dict = {"pause_until": None}
+    if not _CONFIG_PATH.exists():
+        return defaults
+    try:
+        with _CONFIG_PATH.open() as fh:
+            data = json.load(fh)
+        return {**defaults, **data}
+    except (json.JSONDecodeError, OSError):
+        return defaults
+
+
+def _save_config(config: dict) -> None:
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _CONFIG_PATH.open("w") as fh:
+        json.dump(config, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+# ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
 
@@ -129,6 +160,20 @@ def parse_commands(comment_body: str) -> list[tuple[int, str]]:
         rating = _RESULT_LABEL[match.group(2).lower()]
         commands.append((num, rating))
     return commands
+
+
+def parse_pause_command(comment_body: str) -> int | None:
+    """
+    Return the number of days from a ``pause <days>`` command, or None if not present.
+
+    If multiple pause commands appear, the first one wins.
+    Days are clamped to [1, 365].
+    """
+    m = _PAUSE_RE.search(comment_body)
+    if not m:
+        return None
+    days = int(m.group(1))
+    return max(1, min(365, days))
 
 
 def extract_problem_map(issue_body: str) -> dict[str, str]:
@@ -265,7 +310,26 @@ def main() -> None:
         print("REVIEW_COMMENT_BODY env var is empty. Skipping.")
         return
 
-    # 1. Parse commands from the comment
+    # 1a. Check for a pause command — handled independently of review commands
+    pause_days = parse_pause_command(comment_body)
+    if pause_days is not None:
+        pause_until = today + timedelta(days=pause_days)
+        config = _load_config()
+        config["pause_until"] = pause_until.isoformat()
+        _save_config(config)
+        reply = (
+            f"⏸️ **Reviews paused**\n\n"
+            f"Automation has been paused for **{pause_days} day{'s' if pause_days != 1 else ''}**.\n"
+            f"Reviews will resume on **{pause_until.isoformat()}**."
+        )
+        try:
+            post_comment(args.repo, args.issue_number, reply)
+        except Exception as exc:
+            print(f"Error posting comment: {exc}", file=sys.stderr)
+            sys.exit(1)
+        return
+
+    # 1b. Parse review commands from the comment
     commands = parse_commands(comment_body)
     if not commands:
         # No review commands found — ignore the comment silently

@@ -72,6 +72,7 @@ def _load_config() -> dict:
         "system_start_date": None,
         "auto_forgot_after_days": 14,
         "daily_show_limit": 3,
+        "pause_until": None,
     }
     if not _CONFIG_PATH.exists():
         return defaults
@@ -81,6 +82,24 @@ def _load_config() -> dict:
         return {**defaults, **data}
     except (json.JSONDecodeError, OSError):
         return defaults
+
+
+def _save_config(config: dict) -> None:
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _CONFIG_PATH.open("w") as fh:
+        json.dump(config, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+
+
+def is_paused(config: dict, today: date) -> bool:
+    """Return True when the automation is paused for *today*."""
+    pause_until = config.get("pause_until")
+    if not pause_until:
+        return False
+    try:
+        return today <= date.fromisoformat(pause_until)
+    except ValueError:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +349,12 @@ def run_daily(today: date | None = None) -> None:
         today = date.today()
 
     config = _load_config()
+
+    if is_paused(config, today):
+        pause_until = config["pause_until"]
+        print(f"⏸️  Automation is paused until {pause_until}. Skipping daily review.")
+        return
+
     auto_forgot_after_days: int = config.get("auto_forgot_after_days", 14)
 
     reviews = _load_reviews()
