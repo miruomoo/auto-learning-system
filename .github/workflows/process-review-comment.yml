@@ -6,8 +6,8 @@ on:
 
 jobs:
   process:
-    # Only run on comments that look like review commands
-    if: contains(github.event.comment.body, 'review') && github.event.issue.state == 'open'
+    # Only run on comments that look like review or pause commands
+    if: (contains(github.event.comment.body, 'review') || contains(github.event.comment.body, 'pause')) && github.event.issue.state == 'open'
     runs-on: ubuntu-latest
 
     permissions:
@@ -37,7 +37,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .leetcode-review/reviews.json
+          git add .leetcode-review/reviews.json .leetcode-review/config.json
           git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
           git push
 

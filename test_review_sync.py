@@ -575,6 +575,80 @@ class SyncNewProblemsTests(unittest.TestCase):
         self.assertEqual(reviews["some-problem"]["review_count"], count_after_first)
         self.assertEqual(reviews["some-problem"]["next_review"], next_review_after_first)
 
+    # ------------------------------------------------------------------
+    # Pause feature
+    # ------------------------------------------------------------------
+
+    def test_is_paused_returns_true_when_today_before_pause_until(self):
+        config = {"pause_until": "2026-08-25"}
+        self.assertTrue(review.is_paused(config, date(2026, 8, 18)))
+
+    def test_is_paused_returns_true_on_pause_until_date(self):
+        config = {"pause_until": "2026-08-25"}
+        self.assertTrue(review.is_paused(config, date(2026, 8, 25)))
+
+    def test_is_paused_returns_false_after_pause_until(self):
+        config = {"pause_until": "2026-08-25"}
+        self.assertFalse(review.is_paused(config, date(2026, 8, 26)))
+
+    def test_is_paused_returns_false_when_no_pause_until(self):
+        self.assertFalse(review.is_paused({}, date(2026, 8, 18)))
+        self.assertFalse(review.is_paused({"pause_until": None}, date(2026, 8, 18)))
+
+    def test_is_paused_returns_false_on_invalid_date(self):
+        config = {"pause_until": "not-a-date"}
+        self.assertFalse(review.is_paused(config, date(2026, 8, 18)))
+
+    def test_run_daily_skips_when_paused(self):
+        """run_daily should print the pause message and return without touching reviews."""
+        today = date(2026, 8, 18)
+        config = {
+            "system_start_date": None,
+            "auto_forgot_after_days": 14,
+            "daily_show_limit": 3,
+            "pause_until": "2026-08-20",
+        }
+        save_called = []
+        with (
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "_load_reviews", return_value={}),
+            patch.object(review, "_save_reviews", side_effect=lambda r: save_called.append(r)),
+        ):
+            review.run_daily(today)
+
+        # reviews should never be saved when paused
+        self.assertEqual(save_called, [])
+
+
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent / "scripts"))
+import process_review_comment as prc
+
+
+class PauseCommandParsingTests(unittest.TestCase):
+    def test_parse_pause_command_basic(self):
+        self.assertEqual(prc.parse_pause_command("pause 7"), 7)
+
+    def test_parse_pause_command_case_insensitive(self):
+        self.assertEqual(prc.parse_pause_command("PAUSE 3"), 3)
+
+    def test_parse_pause_command_leading_whitespace(self):
+        self.assertEqual(prc.parse_pause_command("  pause 5  "), 5)
+
+    def test_parse_pause_command_not_present(self):
+        self.assertIsNone(prc.parse_pause_command("review 1 easy"))
+        self.assertIsNone(prc.parse_pause_command("hello world"))
+
+    def test_parse_pause_command_clamps_min(self):
+        self.assertEqual(prc.parse_pause_command("pause 0"), 1)
+
+    def test_parse_pause_command_clamps_max(self):
+        self.assertEqual(prc.parse_pause_command("pause 999"), 365)
+
+    def test_parse_pause_command_multiline_picks_first(self):
+        body = "some text\npause 10\npause 20"
+        self.assertEqual(prc.parse_pause_command(body), 10)
+
 
 if __name__ == "__main__":
     unittest.main()

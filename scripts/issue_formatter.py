@@ -73,7 +73,7 @@ _CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 
 def _load_config() -> dict:
-    defaults = {"daily_show_limit": 3}
+    defaults = {"daily_show_limit": 3, "pause_until": None}
     if not _CONFIG_PATH.exists():
         return defaults
     try:
@@ -82,6 +82,17 @@ def _load_config() -> dict:
         return {**defaults, **data}
     except (json.JSONDecodeError, OSError):
         return defaults
+
+
+def _is_paused(config: dict, today: date) -> bool:
+    """Return True when the automation is paused for *today*."""
+    pause_until = config.get("pause_until")
+    if not pause_until:
+        return False
+    try:
+        return today <= date.fromisoformat(pause_until)
+    except ValueError:
+        return False
 
 
 def _sort_key(item: tuple[str, dict], today: date):
@@ -114,6 +125,15 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     if today is None:
         today = date.today()
 
+    config = _load_config()
+    if _is_paused(config, today):
+        pause_until = config["pause_until"]
+        body = (
+            f"## 📚 Today's LeetCode Reviews — {today.isoformat()}\n\n"
+            f"⏸️ Reviews are paused until **{pause_until}**. No problems will be shown until then."
+        )
+        return body, []
+
     reviews = _load_reviews()
     reviews = _sync(reviews, today)
     _save_reviews(reviews)
@@ -121,7 +141,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
 
-    max_daily: int = _load_config()["daily_show_limit"]
+    max_daily: int = config["daily_show_limit"]
     shown_items = due_items[:max_daily]
     deferred_items = due_items[max_daily:]
 
@@ -207,6 +227,18 @@ review 1 easy
 review 2 medium
 review 3 forgot
 ```
+
+---
+
+### ⏸️ Need a break?
+
+To pause the daily reviews, comment:
+
+```
+pause <days>
+```
+
+**Example:** `pause 7` freezes automation for 7 days (max 365). Reviews resume automatically when the pause expires.
 
 ---
 
