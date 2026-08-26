@@ -34,7 +34,7 @@ from urllib import request, error as urllib_error
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from scheduler import schedule  # noqa: E402
+from scheduler import reset_entry, schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
@@ -42,7 +42,7 @@ _CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 # Regex for one review command (case-insensitive, flexible whitespace)
 _REVIEW_RE = re.compile(
-    r"^\s*review\s+(\d+)\s+(easy|medium|forgot)\s*$",
+    r"^\s*review\s+(\d+)\s+(easy|medium|forgot|reset)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -55,8 +55,8 @@ _PAUSE_RE = re.compile(
 # Regex to extract the problem-map JSON hidden in the issue body
 _MAP_RE = re.compile(r"<!--\s*problem-map:\s*(\{.*?\})\s*-->", re.DOTALL)
 
-_VALID_RESULTS = {"easy", "medium", "forgot"}
-_RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot"}
+_VALID_RESULTS = {"easy", "medium", "forgot", "reset"}
+_RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot", "reset": "Reset"}
 
 # ---------------------------------------------------------------------------
 # GitHub API helpers
@@ -246,7 +246,11 @@ def process_commands(
             )
             continue
 
-        reviews[problem_id] = schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+        reviews[problem_id] = (
+            reset_entry(reviews[problem_id], today)
+            if rating == "Reset"
+            else schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+        )
         entry = reviews[problem_id]
         next_date = date.fromisoformat(entry["next_review"])
 

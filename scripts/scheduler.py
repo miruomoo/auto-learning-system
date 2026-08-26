@@ -78,6 +78,27 @@ def schedule(entry: dict, rating: Rating, today: date | None = None) -> dict:
     return entry
 
 
+def reset_entry(entry: dict, today: date | None = None) -> dict:
+    """
+    Reset *entry*'s spaced-repetition schedule back to its initial state.
+
+    Returns a **new** dict (the original is not mutated).  The ``difficulty``
+    and ``topic`` fields are preserved; all scheduling fields are reset to the
+    same defaults used for a newly discovered problem.
+    """
+    if today is None:
+        today = date.today()
+    return {
+        "difficulty": entry.get("difficulty", "Medium"),
+        "topic": entry.get("topic", "Unknown"),
+        "last_review": None,
+        "next_review": (today + timedelta(days=1)).isoformat(),
+        "interval": 1,
+        "ease_factor": _INITIAL_EASE,
+        "review_count": 0,
+    }
+
+
 def is_due(entry: dict, today: date | None = None) -> bool:
     """Return True when the problem is due for review on or before *today*."""
     if today is None:

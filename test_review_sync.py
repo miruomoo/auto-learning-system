@@ -623,6 +623,112 @@ class SyncNewProblemsTests(unittest.TestCase):
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 import process_review_comment as prc
+import scheduler
+
+
+class ResetEntryTests(unittest.TestCase):
+    def test_reset_clears_scheduling_fields(self):
+        today = date(2026, 8, 26)
+        entry = {
+            "difficulty": "Hard",
+            "topic": "Graphs",
+            "last_review": "2026-08-20",
+            "next_review": "2026-08-30",
+            "interval": 15,
+            "ease_factor": 3.0,
+            "review_count": 7,
+        }
+        result = scheduler.reset_entry(entry, today)
+        self.assertIsNone(result["last_review"])
+        self.assertEqual(result["next_review"], "2026-08-27")
+        self.assertEqual(result["interval"], 1)
+        self.assertEqual(result["ease_factor"], 2.5)
+        self.assertEqual(result["review_count"], 0)
+
+    def test_reset_preserves_difficulty_and_topic(self):
+        today = date(2026, 8, 26)
+        entry = {
+            "difficulty": "Hard",
+            "topic": "Graphs",
+            "last_review": "2026-08-20",
+            "next_review": "2026-08-30",
+            "interval": 15,
+            "ease_factor": 3.0,
+            "review_count": 7,
+        }
+        result = scheduler.reset_entry(entry, today)
+        self.assertEqual(result["difficulty"], "Hard")
+        self.assertEqual(result["topic"], "Graphs")
+
+    def test_reset_does_not_mutate_original(self):
+        today = date(2026, 8, 26)
+        entry = {
+            "difficulty": "Medium",
+            "topic": "Arrays",
+            "last_review": "2026-08-10",
+            "next_review": "2026-08-20",
+            "interval": 10,
+            "ease_factor": 2.8,
+            "review_count": 3,
+        }
+        scheduler.reset_entry(entry, today)
+        self.assertEqual(entry["interval"], 10)
+        self.assertEqual(entry["review_count"], 3)
+
+    def test_reset_uses_today_by_default(self):
+        entry = {"difficulty": "Easy", "topic": "Arrays", "interval": 5, "ease_factor": 2.5, "review_count": 2}
+        result = scheduler.reset_entry(entry)
+        # next_review should be tomorrow
+        from datetime import timedelta
+        self.assertEqual(result["next_review"], (date.today() + timedelta(days=1)).isoformat())
+
+
+class ResetParseCommandsTests(unittest.TestCase):
+    def test_parse_reset_command(self):
+        commands = prc.parse_commands("review 3 reset")
+        self.assertEqual(commands, [(3, "Reset")])
+
+    def test_parse_reset_case_insensitive(self):
+        commands = prc.parse_commands("review 2 RESET")
+        self.assertEqual(commands, [(2, "Reset")])
+
+    def test_reset_alongside_other_commands(self):
+        body = "review 1 easy\nreview 2 reset\nreview 3 forgot"
+        commands = prc.parse_commands(body)
+        self.assertEqual(commands, [(1, "Easy"), (2, "Reset"), (3, "Forgot")])
+
+
+class ProcessCommandsResetTests(unittest.TestCase):
+    def test_process_reset_command_updates_entry(self):
+        today = date(2026, 8, 26)
+        problem_map = {"1": "two-sum"}
+        reviews = {
+            "two-sum": {
+                "difficulty": "Easy",
+                "topic": "Arrays",
+                "last_review": "2026-08-20",
+                "next_review": "2026-08-30",
+                "interval": 15,
+                "ease_factor": 3.0,
+                "review_count": 7,
+            }
+        }
+        results, errors = prc.process_commands([(1, "Reset")], problem_map, reviews, today)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 1)
+        r = results[0]
+        self.assertEqual(r["rating"], "Reset")
+        self.assertEqual(r["interval"], 1)
+        from datetime import date as _date
+        self.assertEqual(r["next_review"], _date(2026, 8, 27))
+
+        entry = reviews["two-sum"]
+        self.assertEqual(entry["interval"], 1)
+        self.assertIsNone(entry["last_review"])
+        self.assertEqual(entry["difficulty"], "Easy")
+        self.assertEqual(entry["topic"], "Arrays")
+
+
 
 
 class PauseCommandParsingTests(unittest.TestCase):

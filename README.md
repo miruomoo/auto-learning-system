@@ -80,3 +80,12 @@ Python For Beginners/python-hello-world/submission-0.py
 ## Interacting with the daily review
 
 Once the daily issue is created, post a comment on it containing the word `review` along with your self-assessment. The **Process Review Comment** workflow will pick it up and reschedule the problem accordingly.
+
+**Valid results:** `easy` · `medium` · `forgot` · `reset`
+
+| Result   | Description                                                           |
+|----------|-----------------------------------------------------------------------|
+| `easy`   | Solved quickly with no hints                                          |
+| `medium` | Solved with some extra thinking or hints                              |
+| `forgot` | Could not solve or had to look at the solution                        |
+| `reset`  | Restart spaced-repetition from scratch (resets interval to 1 day)    |
