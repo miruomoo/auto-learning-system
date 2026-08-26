@@ -73,11 +73,11 @@
   },
   "burst-balloons": {
     "difficulty": "Hard",
-    "ease_factor": 2.65,
-    "interval": 3,
-    "last_review": "2026-08-13",
-    "next_review": "2026-08-16",
-    "review_count": 1,
+    "ease_factor": 2.8,
+    "interval": 8,
+    "last_review": "2026-08-26",
+    "next_review": "2026-09-03",
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "buy-and-sell-crypto": {
@@ -235,11 +235,11 @@
   },
   "count-subsequences": {
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 2,
-    "last_review": "2026-08-13",
-    "next_review": "2026-08-15",
-    "review_count": 2,
+    "ease_factor": 2.6,
+    "interval": 5,
+    "last_review": "2026-08-26",
+    "next_review": "2026-08-31",
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "counting-bits": {
@@ -334,11 +334,11 @@
   },
   "edit-distance": {
     "difficulty": "Hard",
-    "ease_factor": 2.45,
-    "interval": 2,
-    "last_review": "2026-08-13",
-    "next_review": "2026-08-15",
-    "review_count": 2,
+    "ease_factor": 2.6,
+    "interval": 5,
+    "last_review": "2026-08-26",
+    "next_review": "2026-08-31",
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "evaluate-reverse-polish-notation": {
