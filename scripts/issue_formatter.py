@@ -219,13 +219,15 @@ After completing each problem, comment on this issue using:
 review <number> <result>
 ```
 
-**Valid results:** `easy` · `medium` · `forgot`
+**Valid results:** `easy` · `medium` · `forgot` · `reset` · `remove`
 
 **Example:**
 ```
 review 1 easy
 review 2 medium
 review 3 forgot
+review 4 reset
+review 5 remove
 ```
 
 ---

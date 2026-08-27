@@ -34,7 +34,7 @@ from urllib import request, error as urllib_error
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from scheduler import schedule  # noqa: E402
+from scheduler import reset_entry, schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
@@ -42,7 +42,7 @@ _CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 # Regex for one review command (case-insensitive, flexible whitespace)
 _REVIEW_RE = re.compile(
-    r"^\s*review\s+(\d+)\s+(easy|medium|forgot)\s*$",
+    r"^\s*review\s+(\d+)\s+(easy|medium|forgot|reset|remove)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -55,8 +55,8 @@ _PAUSE_RE = re.compile(
 # Regex to extract the problem-map JSON hidden in the issue body
 _MAP_RE = re.compile(r"<!--\s*problem-map:\s*(\{.*?\})\s*-->", re.DOTALL)
 
-_VALID_RESULTS = {"easy", "medium", "forgot"}
-_RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot"}
+_VALID_RESULTS = {"easy", "medium", "forgot", "reset", "remove"}
+_RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot", "reset": "Reset", "remove": "Remove"}
 
 # ---------------------------------------------------------------------------
 # GitHub API helpers
@@ -246,7 +246,22 @@ def process_commands(
             )
             continue
 
-        reviews[problem_id] = schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+        if rating == "Remove":
+            del reviews[problem_id]
+            results.append(
+                {
+                    "num": num,
+                    "name": _display_name(problem_id),
+                    "rating": rating,
+                }
+            )
+            continue
+
+        reviews[problem_id] = (
+            reset_entry(reviews[problem_id], today)
+            if rating == "Reset"
+            else schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+        )
         entry = reviews[problem_id]
         next_date = date.fromisoformat(entry["next_review"])
 
@@ -269,22 +284,38 @@ def build_reply(results: list[dict], errors: list[str]) -> str:
     if results:
         if len(results) == 1:
             r = results[0]
-            parts.append(
-                f"✅ **Review updated**\n\n"
-                f"**Problem:** {r['name']}\n"
-                f"**Result:** {r['rating']}\n"
-                f"**Next review:** {_format_date(r['next_review'])}\n"
-                f"**New interval:** {r['interval']} day{'s' if r['interval'] != 1 else ''}"
-            )
+            if r["rating"] == "Remove":
+                parts.append(
+                    f"✅ **Review updated**\n\n"
+                    f"**Problem:** {r['name']}\n"
+                    f"**Result:** {r['rating']}\n"
+                    f"The problem has been removed from the review pool. "
+                    f"It will be re-added automatically the next time it is discovered."
+                )
+            else:
+                parts.append(
+                    f"✅ **Review updated**\n\n"
+                    f"**Problem:** {r['name']}\n"
+                    f"**Result:** {r['rating']}\n"
+                    f"**Next review:** {_format_date(r['next_review'])}\n"
+                    f"**New interval:** {r['interval']} day{'s' if r['interval'] != 1 else ''}"
+                )
         else:
             lines = ["✅ **Reviews updated**\n"]
             for r in results:
-                lines.append(
-                    f"{r['num']}. **{r['name']}**\n"
-                    f"   - Result: {r['rating']}\n"
-                    f"   - Next review: {r['next_review'].strftime('%b %-d')}\n"
-                    f"   - New interval: {r['interval']} day{'s' if r['interval'] != 1 else ''}"
-                )
+                if r["rating"] == "Remove":
+                    lines.append(
+                        f"{r['num']}. **{r['name']}**\n"
+                        f"   - Result: {r['rating']}\n"
+                        f"   - Removed from the review pool"
+                    )
+                else:
+                    lines.append(
+                        f"{r['num']}. **{r['name']}**\n"
+                        f"   - Result: {r['rating']}\n"
+                        f"   - Next review: {r['next_review'].strftime('%b %-d')}\n"
+                        f"   - New interval: {r['interval']} day{'s' if r['interval'] != 1 else ''}"
+                    )
             parts.append("\n".join(lines))
 
     parts.extend(errors)
