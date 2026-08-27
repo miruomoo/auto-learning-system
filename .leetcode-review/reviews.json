@@ -145,11 +145,11 @@
   },
   "coin-change-ii": {
     "difficulty": "Medium",
-    "ease_factor": 2.8,
-    "interval": 8,
-    "last_review": "2026-08-14",
-    "next_review": "2026-08-22",
-    "review_count": 3,
+    "ease_factor": 2.95,
+    "interval": 24,
+    "last_review": "2026-08-27",
+    "next_review": "2026-09-20",
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "combination-target-sum": {
@@ -1207,11 +1207,11 @@
   },
   "target-sum": {
     "difficulty": "Medium",
-    "ease_factor": 2.6,
-    "interval": 5,
-    "last_review": "2026-08-12",
-    "next_review": "2026-08-17",
-    "review_count": 3,
+    "ease_factor": 2.75,
+    "interval": 14,
+    "last_review": "2026-08-27",
+    "next_review": "2026-09-10",
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "task-scheduling": {
