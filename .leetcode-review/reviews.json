@@ -620,15 +620,6 @@
     "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
-  "longest-increasing-path-in-matrix": {
-    "difficulty": "Medium",
-    "ease_factor": 2.6,
-    "interval": 5,
-    "last_review": "2026-08-12",
-    "next_review": "2026-08-17",
-    "review_count": 2,
-    "topic": "Data Structures & Algorithms"
-  },
   "longest-increasing-subsequence": {
     "difficulty": "Medium",
     "ease_factor": 2.5,
