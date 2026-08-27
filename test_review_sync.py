@@ -731,6 +731,62 @@ class ProcessCommandsResetTests(unittest.TestCase):
 
 
 
+class RemoveCommandTests(unittest.TestCase):
+    def test_parse_remove_command(self):
+        commands = prc.parse_commands("review 2 remove")
+        self.assertEqual(commands, [(2, "Remove")])
+
+    def test_parse_remove_case_insensitive(self):
+        commands = prc.parse_commands("review 4 REMOVE")
+        self.assertEqual(commands, [(4, "Remove")])
+
+    def test_process_remove_deletes_entry(self):
+        today = date(2026, 8, 26)
+        problem_map = {"1": "two-sum"}
+        reviews = {
+            "two-sum": {
+                "difficulty": "Easy",
+                "topic": "Arrays",
+                "last_review": "2026-08-20",
+                "next_review": "2026-08-30",
+                "interval": 15,
+                "ease_factor": 3.0,
+                "review_count": 7,
+            }
+        }
+        results, errors = prc.process_commands([(1, "Remove")], problem_map, reviews, today)
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["rating"], "Remove")
+        self.assertEqual(results[0]["name"], "Two Sum")
+        self.assertNotIn("two-sum", reviews)
+
+    def test_process_remove_result_has_no_next_review_or_interval(self):
+        today = date(2026, 8, 26)
+        problem_map = {"1": "two-sum"}
+        reviews = {"two-sum": {"difficulty": "Easy", "topic": "Arrays", "interval": 5, "ease_factor": 2.5, "review_count": 1}}
+        results, _ = prc.process_commands([(1, "Remove")], problem_map, reviews, today)
+        self.assertNotIn("next_review", results[0])
+        self.assertNotIn("interval", results[0])
+
+    def test_build_reply_remove_single(self):
+        results = [{"num": 1, "name": "Two Sum", "rating": "Remove"}]
+        reply = prc.build_reply(results, [])
+        self.assertIn("Remove", reply)
+        self.assertIn("The problem has been removed from the review pool.", reply)
+        self.assertNotIn("Next review", reply)
+
+    def test_build_reply_remove_multi(self):
+        results = [
+            {"num": 1, "name": "Two Sum", "rating": "Remove"},
+            {"num": 2, "name": "Binary Search", "rating": "Easy",
+             "next_review": date(2026, 9, 5), "interval": 10},
+        ]
+        reply = prc.build_reply(results, [])
+        self.assertIn("Removed from the review pool", reply)
+        self.assertIn("Binary Search", reply)
+
+
 class PauseCommandParsingTests(unittest.TestCase):
     def test_parse_pause_command_basic(self):
         self.assertEqual(prc.parse_pause_command("pause 7"), 7)
