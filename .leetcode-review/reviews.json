@@ -73,11 +73,11 @@
   },
   "burst-balloons": {
     "difficulty": "Hard",
-    "ease_factor": 2.6,
-    "interval": 1,
-    "last_review": "2026-09-03",
-    "next_review": "2026-09-04",
-    "review_count": 3,
+    "ease_factor": 2.75,
+    "interval": 3,
+    "last_review": "2026-09-04",
+    "next_review": "2026-09-07",
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "buy-and-sell-crypto": {
