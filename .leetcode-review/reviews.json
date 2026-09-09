@@ -73,11 +73,11 @@
   },
   "burst-balloons": {
     "difficulty": "Hard",
-    "ease_factor": 2.75,
-    "interval": 3,
-    "last_review": "2026-09-04",
-    "next_review": "2026-09-07",
-    "review_count": 4,
+    "ease_factor": 2.9,
+    "interval": 9,
+    "last_review": "2026-09-09",
+    "next_review": "2026-09-18",
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "buy-and-sell-crypto": {
@@ -622,11 +622,11 @@
   },
   "longest-increasing-path-in-matrix": {
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 2,
-    "last_review": "2026-09-03",
-    "next_review": "2026-09-05",
-    "review_count": 2,
+    "ease_factor": 2.25,
+    "interval": 1,
+    "last_review": "2026-09-09",
+    "next_review": "2026-09-10",
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "longest-increasing-subsequence": {
