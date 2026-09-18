@@ -334,11 +334,11 @@
   },
   "edit-distance": {
     "difficulty": "Hard",
-    "ease_factor": 2.75,
-    "interval": 14,
-    "last_review": "2026-09-03",
-    "next_review": "2026-09-17",
-    "review_count": 4,
+    "ease_factor": 2.9,
+    "interval": 41,
+    "last_review": "2026-09-18",
+    "next_review": "2026-10-29",
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "evaluate-reverse-polish-notation": {
@@ -622,11 +622,11 @@
   },
   "longest-increasing-path-in-matrix": {
     "difficulty": "Medium",
-    "ease_factor": 2.25,
+    "ease_factor": 2.05,
     "interval": 1,
-    "last_review": "2026-09-09",
-    "next_review": "2026-09-10",
-    "review_count": 3,
+    "last_review": "2026-09-18",
+    "next_review": "2026-09-19",
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "longest-increasing-subsequence": {
@@ -1207,11 +1207,11 @@
   },
   "target-sum": {
     "difficulty": "Medium",
-    "ease_factor": 2.75,
-    "interval": 14,
-    "last_review": "2026-08-27",
-    "next_review": "2026-09-10",
-    "review_count": 4,
+    "ease_factor": 2.9,
+    "interval": 41,
+    "last_review": "2026-09-18",
+    "next_review": "2026-10-29",
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "task-scheduling": {
