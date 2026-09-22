@@ -217,6 +217,7 @@ def process_commands(
     problem_map: dict[str, str],
     reviews: dict,
     today: date,
+    comment_id: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     """
     Apply each command to *reviews* (mutated in place).
@@ -246,6 +247,11 @@ def process_commands(
             )
             continue
 
+        comment_marker = str(comment_id) if comment_id is not None else None
+        processed_comments = reviews[problem_id].get("processed_rating_comment_ids", [])
+        if comment_marker is not None and comment_marker in processed_comments:
+            continue
+
         if rating == "Remove":
             del reviews[problem_id]
             results.append(
@@ -263,6 +269,8 @@ def process_commands(
             else schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
         )
         entry = reviews[problem_id]
+        if comment_marker is not None:
+            entry.setdefault("processed_rating_comment_ids", []).append(comment_marker)
         next_date = date.fromisoformat(entry["next_review"])
 
         results.append(
@@ -330,6 +338,7 @@ def build_reply(results: list[dict], errors: list[str]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--issue-number", type=int, required=True)
+    parser.add_argument("--comment-id", type=int, required=True)
     parser.add_argument("--repo", required=True, help="owner/repo")
     args = parser.parse_args()
 
@@ -381,7 +390,13 @@ def main() -> None:
 
     # 3. Load reviews, apply updates
     reviews = _load_reviews()
-    results, errors = process_commands(commands, problem_map, reviews, today)
+    results, errors = process_commands(
+        commands,
+        problem_map,
+        reviews,
+        today,
+        comment_id=args.comment_id,
+    )
 
     # 4. Save updated reviews
     if results:

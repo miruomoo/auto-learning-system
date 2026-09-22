@@ -97,8 +97,9 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
     }
-    if "processed_submission_commits" in entry:
-        reset["processed_submission_commits"] = list(entry["processed_submission_commits"])
+    for marker in ("processed_submission_commits", "processed_rating_comment_ids"):
+        if marker in entry:
+            reset[marker] = list(entry[marker])
     return reset
 
 

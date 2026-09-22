@@ -22,7 +22,7 @@ Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dis
 
 `system_start_date` applies to individual submission events, not entire problems. A problem with older imported files begins tracking when its first `submission-N` file is committed on or after the cutoff. Eligible commits are consumed chronologically and their commit identities are stored in `processed_submission_commits`, so same-day submissions remain distinct and workflow reruns are idempotent.
 
-An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes.
+An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes, and each comment is applied at most once using its GitHub comment ID.
 
 On the first run after upgrading, entries with established review progress keep their existing schedule, difficulty, and topic; currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
 

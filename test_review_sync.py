@@ -468,10 +468,26 @@ class SchedulerAndCommentTests(unittest.TestCase):
     def test_process_rating_updates_entry(self):
         reviews = {"problem": untouched_entry()}
         results, errors = prc.process_commands(
-            [(1, "Easy")], {"1": "problem"}, reviews, date(2026, 9, 22)
+            [(1, "Easy")],
+            {"1": "problem"},
+            reviews,
+            date(2026, 9, 22),
+            comment_id=123,
         )
         self.assertEqual(errors, [])
         self.assertEqual(results[0]["rating"], "Easy")
+        self.assertEqual(reviews["problem"]["review_count"], 1)
+        self.assertEqual(reviews["problem"]["processed_rating_comment_ids"], ["123"])
+
+        repeated_results, repeated_errors = prc.process_commands(
+            [(1, "Easy")],
+            {"1": "problem"},
+            reviews,
+            date(2026, 9, 22),
+            comment_id=123,
+        )
+        self.assertEqual(repeated_results, [])
+        self.assertEqual(repeated_errors, [])
         self.assertEqual(reviews["problem"]["review_count"], 1)
 
     def test_process_reset_and_remove(self):
