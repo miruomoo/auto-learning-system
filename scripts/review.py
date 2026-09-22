@@ -28,7 +28,8 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 # Allow running from repo root without installing a package
@@ -107,191 +108,178 @@ def is_paused(config: dict, today: date) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _problem_solution_files(repo_root: Path, meta: dict, problem_id: str) -> list[Path]:
+@dataclass(frozen=True)
+class SubmissionEvent:
+    commit: str
+    committed_at: datetime
+
+    @property
+    def submission_date(self) -> date:
+        return self.committed_at.astimezone(timezone.utc).date()
+
+
+def _submission_events(repo_root: Path, problem_id: str, meta: dict) -> list[SubmissionEvent] | None:
+    """Return commits that added NeetCode submission files for one problem."""
     problem_dir = repo_root / meta["topic"] / problem_id
-    if not problem_dir.is_dir():
-        return []
-    return sorted(
-        path for path in problem_dir.iterdir() if path.is_file() and path.suffix in _SOLUTION_EXTENSIONS
-    )
-
-
-def _first_commit_date(repo_root: Path, solution_file: Path) -> date | None:
-    result = subprocess.run(
-        ["git", "log", "--follow", "--diff-filter=A", "--format=%aI", "--", str(solution_file)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        return None
-
-    timestamps = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not timestamps:
-        return None
-
     try:
-        return datetime.fromisoformat(timestamps[-1]).date()
-    except ValueError:
+        pathspec = problem_dir.relative_to(repo_root).as_posix()
+        result = subprocess.run(
+            [
+                "git",
+                "log",
+                "--format=%x1e%H%x09%cI",
+                "--name-only",
+                "--diff-filter=A",
+                "--",
+                pathspec,
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (OSError, ValueError) as exc:
+        print(f"❌ Unable to inspect submission history for '{problem_id}': {exc}", file=sys.stderr)
         return None
 
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"git exited with status {result.returncode}"
+        print(f"❌ Unable to inspect submission history for '{problem_id}': {detail}", file=sys.stderr)
+        return None
 
-def _first_post_start_commit_date(
-    repo_root: Path,
-    problem_id: str,
-    meta: dict,
-    system_start_date: date,
-) -> date | None:
-    """Return the earliest commit date for *problem_id*'s solution files
-    that falls on or after *system_start_date*."""
-    commit_dates = [
-        commit_date
-        for solution_file in _problem_solution_files(repo_root, meta, problem_id)
-        if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
-        and commit_date >= system_start_date
-    ]
-    return min(commit_dates) if commit_dates else None
-
-
-def _new_problem_base_date(
-    repo_root: Path,
-    problem_id: str,
-    meta: dict,
-    today: date,
-    system_start_date: date | None = None,
-) -> date | None:
-    """Return the earliest first-commit date across all solution files for *problem_id*.
-
-    Returns ``None`` when git history is unavailable AND ``system_start_date``
-    is configured — the caller should treat ``None`` as "skip this problem"
-    rather than registering it with an unverified date.  When no
-    ``system_start_date`` is configured the old behaviour (fall back to
-    ``today``) is preserved so the system stays permissive for repos without
-    the cutoff feature.
-    """
-    commit_dates = [
-        commit_date
-        for solution_file in _problem_solution_files(repo_root, meta, problem_id)
-        if (commit_date := _first_commit_date(repo_root, solution_file)) is not None
-    ]
-    if not commit_dates:
-        if system_start_date is not None:
-            print(
-                f"⚠️  Could not determine first-commit date for '{problem_id}' "
-                "— skipping (git history unavailable).",
-                file=sys.stderr,
+    events: dict[str, SubmissionEvent] = {}
+    try:
+        for record in result.stdout.split("\x1e"):
+            lines = [line.strip() for line in record.splitlines() if line.strip()]
+            if not lines:
+                continue
+            commit, timestamp = lines[0].split("\t", 1)
+            added_submission = any(
+                Path(path).name.startswith("submission-")
+                and Path(path).suffix in _SOLUTION_EXTENSIONS
+                for path in lines[1:]
             )
-            return None
-        return today
-    return min(commit_dates)
+            if added_submission:
+                events[commit] = SubmissionEvent(commit, datetime.fromisoformat(timestamp))
+    except (TypeError, ValueError) as exc:
+        print(
+            f"❌ Unable to parse submission history for '{problem_id}': {exc}. "
+            "Existing metadata was left unchanged.",
+            file=sys.stderr,
+        )
+        return None
+
+    return sorted(events.values(), key=lambda event: (event.committed_at, event.commit))
 
 
-def _prune_stale_entries(
-    reviews: dict,
-    repo_root: Path,
-    system_start_date: date,
-    today: date,
-) -> tuple[dict, list[str]]:
-    """Remove entries whose first-commit date precedes *system_start_date*.
+def _has_established_schedule(entry: dict) -> bool:
+    """Return whether a legacy entry contains evidence of user review progress."""
+    return (
+        entry.get("review_count", 0) > 0
+        or entry.get("last_review") is not None
+        or entry.get("interval", 1) != 1
+        or entry.get("ease_factor", 2.5) != 2.5
+    )
 
-    Entries with real review history (``review_count > 0`` or ``last_review``
-    is not null) are always preserved — the user has intentionally been working
-    on them and we must not lose that progress.
 
-    Mutates *reviews* in-place and also returns it for convenience.
-    """
-    pruned: list[str] = []
-    to_remove: list[str] = []
-    for problem_id, entry in reviews.items():
-        # Never prune entries with real review history.
-        if entry.get("review_count", 0) > 0 or entry.get("last_review"):
-            continue
-
-        meta = {"topic": entry.get("topic", "Unknown"), "difficulty": entry.get("difficulty", "Unknown")}
-        base_date = _new_problem_base_date(repo_root, problem_id, meta, today, system_start_date)
-        if base_date is None or base_date < system_start_date:
-            to_remove.append(problem_id)
-
-    for problem_id in to_remove:
-        del reviews[problem_id]
-        pruned.append(problem_id)
-
-    return reviews, pruned
+def _record_submission(entry: dict, event: SubmissionEvent) -> None:
+    """Record a completion without applying an SM-2 rating."""
+    submission_date = event.submission_date
+    interval = entry.get("interval", 1)
+    entry["last_review"] = submission_date.isoformat()
+    entry["next_review"] = (submission_date + timedelta(days=interval)).isoformat()
+    entry.setdefault("processed_submission_commits", []).append(event.commit)
 
 
 def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict, list[str], list[str]]:
     """
-    Add any newly discovered problems to *reviews*.
+    Synchronize discovered NeetCode submission commits into *reviews*.
 
-    Problems whose first-commit date is before the configured system_start_date
-    are skipped entirely so pre-existing solutions don't flood the queue.
+    The cutoff applies to each submission event. Legacy entries with established
+    schedules are migrated by recording all currently eligible commits as
+    processed without replaying them.
 
-    Returns (updated_reviews, list_of_new_problem_ids, list_of_backfilled_problem_ids).
+    Returns (updated_reviews, list_of_new_problem_ids, list_of_completed_problem_ids).
     """
     config = _load_config()
     system_start_date: date | None = None
     if config.get("system_start_date"):
         try:
             system_start_date = date.fromisoformat(config["system_start_date"])
-        except ValueError:
-            system_start_date = None
+        except ValueError as exc:
+            raise ValueError("system_start_date must use YYYY-MM-DD format") from exc
 
     discovered = discover_problems(repo_root)
     new_ids: list[str] = []
-    backfilled_ids: list[str] = []
-
-    # Retroactively prune entries that were seeded before the system was
-    # properly initialised (no review history, first-commit < system_start_date).
-    if system_start_date is not None:
-        reviews, pruned_ids = _prune_stale_entries(reviews, repo_root, system_start_date, today)
-        if pruned_ids:
-            print(
-                f"🗑️  Pruned {len(pruned_ids)} stale entry/entries seeded before "
-                f"system_start_date ({system_start_date.isoformat()}): "
-                f"{', '.join(sorted(pruned_ids))}\n"
-            )
+    completed_ids: list[str] = []
+    excluded_ids: list[str] = []
 
     for problem_id, meta in discovered.items():
-        if problem_id not in reviews:
-            base_date = _new_problem_base_date(repo_root, problem_id, meta, today, system_start_date)
-            if base_date is None:
+        events = _submission_events(repo_root, problem_id, meta)
+        if events is None:
+            continue
+        eligible_events = sorted(
+            (
+                event
+                for event in events
+                if system_start_date is None or event.submission_date >= system_start_date
+            ),
+            key=lambda event: (event.committed_at, event.commit),
+        )
+
+        existing = reviews.get(problem_id)
+        if existing is None:
+            if not eligible_events:
                 continue
-            if system_start_date is not None and base_date < system_start_date:
-                continue
-            entry = new_entry(base_date)
-            # Override defaults with discovered metadata, but do *not*
-            # overwrite any user-set difficulty/topic already in reviews.json.
-            entry["difficulty"] = meta["difficulty"]
-            entry["topic"] = meta["topic"]
-            reviews[problem_id] = entry
+            existing = new_entry(eligible_events[0].submission_date)
+            existing["difficulty"] = meta["difficulty"]
+            existing["topic"] = meta["topic"]
+            existing["processed_submission_commits"] = []
+            reviews[problem_id] = existing
             new_ids.append(problem_id)
         else:
-            # Keep topic/difficulty fresh if they were never explicitly set.
-            existing = reviews[problem_id]
             if existing.get("topic") in (None, "Unknown"):
                 existing["topic"] = meta["topic"]
             if existing.get("difficulty") in (None, "Unknown"):
                 existing["difficulty"] = meta["difficulty"]
 
-            # Backfill last_review from the first post-start commit date if the
-            # problem has never been reviewed but was submitted after system start.
-            if (
-                system_start_date is not None
-                and existing.get("review_count", 0) == 0
-                and existing.get("last_review") is None
+            if "processed_submission_commits" not in existing:
+                if _has_established_schedule(existing):
+                    existing["processed_submission_commits"] = [
+                        event.commit for event in eligible_events
+                    ]
+                    continue
+                if not eligible_events:
+                    excluded_ids.append(problem_id)
+                    continue
+                existing["processed_submission_commits"] = []
+            elif not isinstance(existing["processed_submission_commits"], list) or not all(
+                isinstance(commit, str) for commit in existing["processed_submission_commits"]
             ):
-                submission_date = _first_post_start_commit_date(
-                    repo_root, problem_id, meta, system_start_date
+                print(
+                    f"❌ Invalid processed_submission_commits for '{problem_id}'. "
+                    "Existing metadata was left unchanged.",
+                    file=sys.stderr,
                 )
-                if submission_date is not None:
-                    existing["last_review"] = submission_date.isoformat()
-                    existing["next_review"] = (
-                        submission_date + timedelta(days=existing.get("interval", 1))
-                    ).isoformat()
-                    backfilled_ids.append(problem_id)
+                continue
 
-    return reviews, new_ids, backfilled_ids
+        processed = set(existing["processed_submission_commits"])
+        unprocessed_events = [event for event in eligible_events if event.commit not in processed]
+        for event in unprocessed_events:
+            _record_submission(existing, event)
+        if unprocessed_events:
+            completed_ids.append(problem_id)
+
+    for problem_id in excluded_ids:
+        del reviews[problem_id]
+
+    if excluded_ids:
+        print(
+            f"🗑️  Excluded {len(excluded_ids)} unreviewed problem(s) with no eligible "
+            f"submissions: {', '.join(sorted(excluded_ids))}\n"
+        )
+
+    return reviews, new_ids, completed_ids
 
 
 # ---------------------------------------------------------------------------
@@ -358,7 +346,7 @@ def run_daily(today: date | None = None) -> None:
     auto_forgot_after_days: int = config.get("auto_forgot_after_days", 14)
 
     reviews = _load_reviews()
-    reviews, new_ids, backfilled_ids = sync_new_problems(reviews, _REPO_ROOT, today)
+    reviews, new_ids, completed_ids = sync_new_problems(reviews, _REPO_ROOT, today)
 
     # Auto-forgot sweep: problems overdue beyond the threshold are penalised
     # automatically so the queue doesn't grow without bound.
@@ -372,10 +360,10 @@ def run_daily(today: date | None = None) -> None:
 
     if new_ids:
         print(f"🆕 Registered {len(new_ids)} new problem(s): {', '.join(sorted(new_ids))}\n")
-    if backfilled_ids:
+    if completed_ids:
         print(
-            f"📅 Backfilled last_review for {len(backfilled_ids)} problem(s) from git history: "
-            f"{', '.join(sorted(backfilled_ids))}\n"
+            f"📅 Recorded new submissions for {len(completed_ids)} problem(s): "
+            f"{', '.join(sorted(completed_ids))}\n"
         )
     if auto_forgot_ids:
         print(

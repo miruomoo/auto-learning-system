@@ -10,12 +10,21 @@ Solutions are stored in this repository organised by topic and problem ID. Two G
 
 ### 1. Daily LeetCode Review (`main.yml`)
 
-Runs automatically every day at **9:00 AM UTC** (or manually via `workflow_dispatch`).
+Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dispatch`).
 
-1. **`scripts/review.py`** — scans your solutions and applies a spaced-repetition schedule to determine which problems are due for review today, then updates `.leetcode-review/reviews.json`.
-2. **`scripts/issue_formatter.py`** — formats the day's review set into a GitHub Issue body.
+1. **`scripts/review.py`** — consumes new submission commits and determines which problems are due, then updates `.leetcode-review/reviews.json`.
+2. **`scripts/issue_formatter.py`** — reads the synchronized metadata and formats the day's review set into a GitHub Issue body.
 3. A GitHub Issue titled `📚 Daily LeetCode Review — YYYY-MM-DD` is created (or updated if one already exists for today).
-4. Updated review metadata is committed back to the repository.
+4. If the day has no scheduled reviews, older open issues with the same daily-review title prefix are closed with an automated comment. Today's issue and unrelated issues remain open.
+5. Updated review metadata is committed back to the repository.
+
+### Submission tracking and migration
+
+`system_start_date` applies to individual submission events, not entire problems. A problem with older imported files begins tracking when its first `submission-N` file is committed on or after the cutoff. Eligible commits are consumed chronologically and their commit identities are stored in `processed_submission_commits`, so same-day submissions remain distinct and workflow reruns are idempotent.
+
+An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes.
+
+On the first run after upgrading, entries with established review progress keep their existing schedule, difficulty, and topic; currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
 
 ### 2. Process Review Comment (`process-review-comment.yml`)
 
@@ -36,11 +45,12 @@ scripts/
   review.py                 ← selects problems due today & updates schedule
   issue_formatter.py        ← formats the daily review GitHub Issue body
   process_review_comment.py ← handles review feedback from issue comments
+  daily_issue_lifecycle.py  ← closes stale daily issues on empty days
   discovery.py              ← scans the repo for solution files
   scheduler.py              ← spaced-repetition scheduling logic
 
 .github/workflows/
-  main.yml                  ← daily review workflow (cron: 9 AM UTC)
+  main.yml                  ← daily review workflow (weekdays at 5 AM UTC)
   process-review-comment.yml← comment-triggered feedback workflow
 
 <topic-folder>/

@@ -11,6 +11,7 @@ Usage
 -----
     python scripts/issue_formatter.py
     python scripts/issue_formatter.py --today 2026-08-04
+    python scripts/issue_formatter.py --body-file issue.md --github-output "$GITHUB_OUTPUT"
 
 Stdout: the full issue body (Markdown).
 Exit codes: 0 success, 1 error.
@@ -21,14 +22,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from discovery import discover_problems  # noqa: E402
-from scheduler import days_overdue, is_due, new_entry  # noqa: E402
+from scheduler import days_overdue, is_due  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
@@ -41,30 +41,6 @@ def _load_reviews() -> dict:
         with _REVIEWS_PATH.open() as fh:
             return json.load(fh)
     return {}
-
-
-def _save_reviews(reviews: dict) -> None:
-    _REVIEWS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with _REVIEWS_PATH.open("w") as fh:
-        json.dump(reviews, fh, indent=2, sort_keys=True)
-        fh.write("\n")
-
-
-def _sync(reviews: dict, today: date) -> dict:
-    discovered = discover_problems(_REPO_ROOT)
-    for problem_id, meta in discovered.items():
-        if problem_id not in reviews:
-            entry = new_entry(today)
-            entry["difficulty"] = meta["difficulty"]
-            entry["topic"] = meta["topic"]
-            reviews[problem_id] = entry
-        else:
-            existing = reviews[problem_id]
-            if existing.get("topic") in (None, "Unknown"):
-                existing["topic"] = meta["topic"]
-            if existing.get("difficulty") in (None, "Unknown"):
-                existing["difficulty"] = meta["difficulty"]
-    return reviews
 
 
 _DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
@@ -135,8 +111,6 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
         return body, []
 
     reviews = _load_reviews()
-    reviews = _sync(reviews, today)
-    _save_reviews(reviews)
 
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
@@ -258,11 +232,19 @@ pause <days>
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate daily review issue body")
     parser.add_argument("--today", help="Override today's date (YYYY-MM-DD)")
+    parser.add_argument("--body-file", type=Path, help="Write Markdown to this file instead of stdout")
+    parser.add_argument("--github-output", type=Path, help="Write has_reviews to a GitHub Actions output file")
     args = parser.parse_args()
 
     today = date.fromisoformat(args.today) if args.today else None
-    body, _ = build_issue_body(today)
-    print(body)
+    body, shown_items = build_issue_body(today)
+    if args.body_file:
+        args.body_file.write_text(body + "\n")
+    else:
+        print(body)
+    if args.github_output:
+        with args.github_output.open("a") as fh:
+            fh.write(f"has_reviews={'true' if shown_items else 'false'}\n")
 
 
 if __name__ == "__main__":
