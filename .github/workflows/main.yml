@@ -28,23 +28,46 @@ jobs:
       - name: Run review script
         run: python scripts/review.py
 
+      - name: Format daily review issue
+        id: formatter
+        run: |
+          TODAY="$(date -u '+%Y-%m-%d')"
+          echo "today=$TODAY" >> "$GITHUB_OUTPUT"
+          python scripts/issue_formatter.py \
+            --today "$TODAY" \
+            --body-file "$RUNNER_TEMP/daily-review.md" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Create or update daily review issue
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ISSUE_TITLE="📚 Daily LeetCode Review — $(date -u '+%Y-%m-%d')"
-          ISSUE_BODY=$(python scripts/issue_formatter.py)
+          ISSUE_TITLE="📚 Daily LeetCode Review — ${{ steps.formatter.outputs.today }}"
 
-          # Check whether an open issue with this title already exists
-          EXISTING=$(gh issue list --state open --search "$ISSUE_TITLE" --json number --jq '.[0].number // ""')
+          EXISTING=$(
+            gh issue list --state open --limit 1000 --json number,title |
+              jq -r --arg title "$ISSUE_TITLE" \
+                '.[] | select(.title == $title) | .number' |
+              head -n 1
+          )
 
           if [ -n "$EXISTING" ]; then
-            gh issue edit "$EXISTING" --body "$ISSUE_BODY"
+            gh issue edit "$EXISTING" --body-file "$RUNNER_TEMP/daily-review.md"
             echo "Updated existing issue #$EXISTING"
           else
-            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+            gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/daily-review.md"
             echo "Created new issue: $ISSUE_TITLE"
           fi
+
+      - name: Close older daily issues on an empty day
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/daily_issue_lifecycle.py \
+            --repo "${{ github.repository }}" \
+            --today "${{ steps.formatter.outputs.today }}" \
+            --has-reviews "${{ steps.formatter.outputs.has_reviews }}" \
+            --paused "${{ steps.formatter.outputs.paused }}"
 
       - name: Commit updated review metadata
         run: |
@@ -54,4 +77,3 @@ jobs:
           # Only commit when there are actual changes
           git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
           git push
-

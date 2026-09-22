@@ -31,6 +31,7 @@ jobs:
         run: |
           python scripts/process_review_comment.py \
             --issue-number "${{ github.event.issue.number }}" \
+            --comment-id "${{ github.event.comment.id }}" \
             --repo "${{ github.repository }}"
 
       - name: Commit updated review metadata

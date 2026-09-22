@@ -88,7 +88,7 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
     """
     if today is None:
         today = date.today()
-    return {
+    reset = {
         "difficulty": entry.get("difficulty", "Medium"),
         "topic": entry.get("topic", "Unknown"),
         "last_review": None,
@@ -97,6 +97,10 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
     }
+    for marker in ("processed_submission_commits", "processed_rating_comment_ids"):
+        if marker in entry:
+            reset[marker] = list(entry[marker])
+    return reset
 
 
 def is_due(entry: dict, today: date | None = None) -> bool:

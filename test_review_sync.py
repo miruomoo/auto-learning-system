@@ -1,815 +1,510 @@
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
+import daily_issue_lifecycle
+import issue_formatter
+import process_review_comment as prc
 import review
+import scheduler
 
 
-class SyncNewProblemsTests(unittest.TestCase):
-    def test_new_problem_uses_earliest_solution_commit_date(self):
-        today = date(2026, 8, 4)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "two-sum": {
-                "topic": "Data Structures & Algorithms",
-                "difficulty": "Easy",
-            }
-        }
+CONFIG = {
+    "system_start_date": "2026-08-06",
+    "auto_forgot_after_days": 14,
+    "daily_show_limit": 3,
+    "pause_until": None,
+}
+META = {"topic": "Data Structures & Algorithms", "difficulty": "Hard"}
 
+
+def submission(commit: str, timestamp: str) -> review.SubmissionEvent:
+    return review.SubmissionEvent(commit, datetime.fromisoformat(timestamp))
+
+
+def untouched_entry(**overrides) -> dict:
+    entry = {
+        "difficulty": "Hard",
+        "ease_factor": 2.5,
+        "interval": 1,
+        "last_review": None,
+        "next_review": "2026-09-23",
+        "review_count": 0,
+        "topic": "Data Structures & Algorithms",
+    }
+    entry.update(overrides)
+    return entry
+
+
+class SubmissionSyncTests(unittest.TestCase):
+    def sync(self, reviews: dict, events: list[review.SubmissionEvent] | None):
         with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(
-                review,
-                "_problem_solution_files",
-                return_value=[
-                    repo_root / "Data Structures & Algorithms" / "two-sum" / "submission-0.py",
-                    repo_root / "Data Structures & Algorithms" / "two-sum" / "submission-1.py",
-                ],
+            patch.object(review, "discover_problems", return_value={"problem": META}),
+            patch.object(review, "_submission_events", return_value=events),
+            patch.object(review, "_load_config", return_value=CONFIG),
+        ):
+            return review.sync_new_problems(reviews, Path("/repo"), date(2026, 9, 22))
+
+    def test_pre_cutoff_files_do_not_block_first_post_cutoff_submission(self):
+        old = submission("old", "2026-04-29T12:00:00+00:00")
+        new = submission("new", "2026-09-19T01:00:00+00:00")
+
+        updated, new_ids, completed = self.sync({}, [old, new])
+
+        self.assertEqual(new_ids, ["problem"])
+        self.assertEqual(completed, ["problem"])
+        self.assertEqual(updated["problem"]["processed_submission_commits"], ["new"])
+        self.assertEqual(updated["problem"]["last_review"], "2026-09-19")
+
+    def test_largest_rectangle_regression_commit_is_eligible_on_september_19_utc(self):
+        events = [
+            submission("ed6ccbfe", "2026-04-29T11:52:30-04:00"),
+            submission(
+                "08892ef2af64cc3b9282f419c8f5a6e1f8341a46",
+                "2026-09-18T21:58:58-04:00",
             ),
-            patch.object(
-                review,
-                "_first_commit_date",
-                side_effect=[date(2026, 7, 28), date(2026, 7, 30)],
-            ),
-            patch.object(review, "_load_config", return_value={"system_start_date": None, "auto_forgot_after_days": 14, "daily_show_limit": 3}),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+        ]
 
-        self.assertEqual(new_ids, ["two-sum"])
-        self.assertEqual(backfilled_ids, [])
-        self.assertEqual(updated["two-sum"]["next_review"], "2026-07-29")
-        self.assertEqual(updated["two-sum"]["difficulty"], "Easy")
-        self.assertEqual(updated["two-sum"]["topic"], "Data Structures & Algorithms")
+        updated, _, _ = self.sync({}, events)
 
-    def test_new_problem_falls_back_to_today_when_commit_dates_missing(self):
-        today = date(2026, 8, 4)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "three-sum": {
-                "topic": "Data Structures & Algorithms",
-                "difficulty": "Medium",
-            }
-        }
+        entry = updated["problem"]
+        self.assertEqual(entry["last_review"], "2026-09-19")
+        self.assertEqual(entry["next_review"], "2026-09-20")
+        self.assertEqual(
+            entry["processed_submission_commits"],
+            ["08892ef2af64cc3b9282f419c8f5a6e1f8341a46"],
+        )
 
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(
-                review,
-                "_problem_solution_files",
-                return_value=[repo_root / "Data Structures & Algorithms" / "three-sum" / "submission-0.py"],
-            ),
-            patch.object(review, "_first_commit_date", return_value=None),
-            patch.object(review, "_load_config", return_value={"system_start_date": None, "auto_forgot_after_days": 14, "daily_show_limit": 3}),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+    def test_imported_problem_can_be_added_after_a_later_submission(self):
+        old = submission("old", "2026-04-29T12:00:00+00:00")
+        updated, _, _ = self.sync({"problem": untouched_entry()}, [old])
+        self.assertNotIn("problem", updated)
 
-        self.assertEqual(new_ids, ["three-sum"])
-        self.assertEqual(backfilled_ids, [])
-        self.assertEqual(updated["three-sum"]["next_review"], "2026-08-05")
+        new = submission("new", "2026-09-20T12:00:00+00:00")
+        updated, new_ids, _ = self.sync(updated, [old, new])
+        self.assertEqual(new_ids, ["problem"])
+        self.assertIn("problem", updated)
 
-    # ------------------------------------------------------------------
-    # Cutoff enforcement
-    # ------------------------------------------------------------------
+    def test_multiple_submissions_are_processed_chronologically(self):
+        events = [
+            submission("third", "2026-09-21T12:00:00+00:00"),
+            submission("first", "2026-09-19T12:00:00+00:00"),
+            submission("second", "2026-09-20T12:00:00+00:00"),
+        ]
 
-    def test_problem_before_system_start_date_is_skipped(self):
-        today = date(2026, 8, 6)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "old-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Easy"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "old-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=date(2026, 8, 5)),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+        updated, _, _ = self.sync({}, events)
 
+        self.assertEqual(
+            updated["problem"]["processed_submission_commits"],
+            ["first", "second", "third"],
+        )
+        self.assertEqual(updated["problem"]["last_review"], "2026-09-21")
+
+    def test_submission_commit_is_not_processed_twice(self):
+        event = submission("once", "2026-09-19T12:00:00+00:00")
+        updated, _, _ = self.sync({}, [event])
+        snapshot = json.loads(json.dumps(updated))
+
+        rerun, new_ids, completed = self.sync(updated, [event])
+
+        self.assertEqual(rerun, snapshot)
         self.assertEqual(new_ids, [])
-        self.assertEqual(backfilled_ids, [])
-        self.assertNotIn("old-problem", updated)
+        self.assertEqual(completed, [])
 
-    def test_problem_on_system_start_date_is_registered(self):
-        today = date(2026, 8, 6)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "new-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Medium"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "new-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=date(2026, 8, 6)),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+    def test_same_day_submissions_remain_distinct_and_idempotent(self):
+        events = [
+            submission("bbb", "2026-09-19T12:00:00+00:00"),
+            submission("aaa", "2026-09-19T12:00:00+00:00"),
+        ]
+        updated, _, _ = self.sync({}, events)
 
-        self.assertEqual(new_ids, ["new-problem"])
-        self.assertEqual(backfilled_ids, [])
-        self.assertIn("new-problem", updated)
+        self.assertEqual(updated["problem"]["processed_submission_commits"], ["aaa", "bbb"])
+        snapshot = json.loads(json.dumps(updated))
+        rerun, _, _ = self.sync(updated, events)
+        self.assertEqual(rerun, snapshot)
 
-    def test_problem_after_system_start_date_is_registered(self):
-        today = date(2026, 8, 10)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "newer-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Hard"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "newer-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=date(2026, 8, 8)),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+    def test_migration_preserves_established_rating_history(self):
+        existing = untouched_entry(
+            difficulty="Medium",
+            topic="Graphs",
+            ease_factor=2.65,
+            interval=8,
+            last_review="2026-09-10",
+            next_review="2026-09-18",
+            review_count=4,
+        )
+        expected_schedule = dict(existing)
+        events = [
+            submission("eligible-one", "2026-08-10T12:00:00+00:00"),
+            submission("eligible-two", "2026-09-12T12:00:00+00:00"),
+        ]
 
-        self.assertEqual(new_ids, ["newer-problem"])
-        self.assertEqual(backfilled_ids, [])
+        updated, _, completed = self.sync({"problem": existing}, events)
 
-    def test_already_present_problem_not_removed_by_cutoff(self):
-        """Problems already in reviews.json are untouched even if their commit predates the cutoff."""
-        today = date(2026, 8, 6)
-        repo_root = Path("/repo")
-        reviews = {
-            "coin-change-ii": {
-                "difficulty": "Medium",
-                "ease_factor": 2.5,
-                "interval": 1,
-                "last_review": "2026-08-04",
-                "next_review": "2026-08-05",
-                "review_count": 1,
-                "topic": "Data Structures & Algorithms",
-            }
-        }
-        discovered = {
-            "coin-change-ii": {"topic": "Data Structures & Algorithms", "difficulty": "Medium"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+        for field, value in expected_schedule.items():
+            self.assertEqual(updated["problem"][field], value)
+        self.assertEqual(
+            updated["problem"]["processed_submission_commits"],
+            ["eligible-one", "eligible-two"],
+        )
+        self.assertEqual(completed, [])
 
+    def test_submission_uses_current_interval_without_changing_sm2_state(self):
+        entry = untouched_entry(
+            ease_factor=2.8,
+            interval=6,
+            last_review="2026-09-01",
+            next_review="2026-09-07",
+            review_count=5,
+            processed_submission_commits=[],
+        )
+        event = submission("new", "2026-09-19T23:00:00+00:00")
+
+        updated, _, _ = self.sync({"problem": entry}, [event])
+
+        result = updated["problem"]
+        self.assertEqual(result["last_review"], "2026-09-19")
+        self.assertEqual(result["next_review"], "2026-09-25")
+        self.assertEqual(result["interval"], 6)
+        self.assertEqual(result["ease_factor"], 2.8)
+        self.assertEqual(result["review_count"], 5)
+
+    def test_git_history_failure_leaves_metadata_unchanged(self):
+        entry = untouched_entry()
+        original = dict(entry)
+        updated, new_ids, completed = self.sync({"problem": entry}, None)
+        self.assertEqual(updated["problem"], original)
         self.assertEqual(new_ids, [])
-        self.assertEqual(backfilled_ids, [])
-        self.assertIn("coin-change-ii", updated)
-        self.assertEqual(updated["coin-change-ii"]["review_count"], 1)
+        self.assertEqual(completed, [])
 
-    def test_existing_zero_review_problem_backfills_last_review_from_post_start_commit(self):
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {
-            "valid-problem": {
-                "difficulty": "Unknown",
-                "ease_factor": 2.5,
-                "interval": 3,
-                "last_review": None,
-                "next_review": "2026-08-12",
-                "review_count": 0,
-                "topic": "Unknown",
-            }
-        }
-        discovered = {
-            "valid-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Medium"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "valid-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=date(2026, 8, 8)),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
+    def test_git_log_parser_deduplicates_commit_and_sorts_deterministically(self):
+        output = (
+            "\x1ebbb\t2026-09-19T12:00:00+00:00\n\n"
+            "Data Structures & Algorithms/problem/submission-2.py\n"
+            "\x1eaaa\t2026-09-19T12:00:00+00:00\n\n"
+            "Data Structures & Algorithms/problem/submission-0.py\n"
+            "Data Structures & Algorithms/problem/submission-1.py\n"
+        )
+        result = Mock(returncode=0, stdout=output, stderr="")
+        with patch.object(review.subprocess, "run", return_value=result):
+            events = review._submission_events(Path("/repo"), "problem", META)
+        self.assertEqual([event.commit for event in events], ["aaa", "bbb"])
 
-        self.assertEqual(new_ids, [])
-        self.assertEqual(backfilled_ids, ["valid-problem"])
-        self.assertEqual(updated["valid-problem"]["last_review"], "2026-08-08")
-        self.assertEqual(updated["valid-problem"]["next_review"], "2026-08-11")
-        self.assertEqual(updated["valid-problem"]["review_count"], 0)
-        self.assertEqual(updated["valid-problem"]["ease_factor"], 2.5)
-        self.assertEqual(updated["valid-problem"]["difficulty"], "Medium")
-        self.assertEqual(updated["valid-problem"]["topic"], "Data Structures & Algorithms")
-
-    # ------------------------------------------------------------------
-    # Auto-forgot sweep
-    # ------------------------------------------------------------------
-
-    def test_auto_forgot_applied_for_heavily_overdue_problem(self):
-        today = date(2026, 8, 6)
-        # next_review 15 days ago → overdue > 14
-        entry = {
-            "difficulty": "Medium",
-            "ease_factor": 2.5,
-            "interval": 4,
-            "last_review": "2026-07-15",
-            "next_review": "2026-07-22",  # 15 days overdue
-            "review_count": 2,
-            "topic": "Data Structures & Algorithms",
-        }
-        reviews = {"hard-problem": dict(entry)}
-
+    def test_invalid_cutoff_fails_instead_of_importing_history(self):
         with (
             patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-            patch.object(review, "_load_reviews", return_value=reviews),
-            patch.object(review, "_save_reviews"),
+            patch.object(review, "_load_config", return_value={"system_start_date": "bad"}),
         ):
-            review.run_daily(today)
+            with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
+                review.sync_new_problems({}, Path("/repo"), date(2026, 9, 22))
 
-        updated = reviews["hard-problem"]
-        self.assertEqual(updated["interval"], 1)
-        self.assertEqual(updated["next_review"], "2026-08-07")  # today + 1
-        self.assertEqual(updated["review_count"], 3)
-        self.assertLess(updated["ease_factor"], 2.5)
 
-    def test_auto_forgot_not_applied_for_slightly_overdue_problem(self):
-        today = date(2026, 8, 6)
-        entry = {
-            "difficulty": "Easy",
-            "ease_factor": 2.5,
-            "interval": 2,
-            "last_review": "2026-07-25",
-            "next_review": "2026-07-27",  # 10 days overdue — within threshold
-            "review_count": 1,
-            "topic": "Data Structures & Algorithms",
-        }
-        reviews = {"easy-problem": dict(entry)}
-
-        saved: list[dict] = []
-
+class FormatterAuthorityTests(unittest.TestCase):
+    def test_formatter_does_not_recreate_excluded_entry(self):
         with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-            patch.object(review, "_load_reviews", return_value=reviews),
-            patch.object(review, "_save_reviews", side_effect=lambda r: saved.append(dict(r))),
+            patch.object(issue_formatter, "_load_reviews", return_value={}),
+            patch.object(issue_formatter, "_load_config", return_value={"daily_show_limit": 3}),
         ):
-            review.run_daily(today)
+            body, shown = issue_formatter.build_issue_body(date(2026, 9, 22))
 
-        # Entry should be unchanged (not auto-forgotten)
-        saved_entry = saved[-1]["easy-problem"]
-        self.assertEqual(saved_entry["interval"], 2)
-        self.assertEqual(saved_entry["review_count"], 1)
+        self.assertEqual(shown, [])
+        self.assertIn("No reviews scheduled", body)
+        self.assertFalse(hasattr(issue_formatter, "_sync"))
 
-    # ------------------------------------------------------------------
-    # Config loading
-    # ------------------------------------------------------------------
+    def test_pruned_entry_stays_absent_during_formatting(self):
+        old = submission("old", "2026-04-29T12:00:00+00:00")
+        with (
+            patch.object(review, "discover_problems", return_value={"problem": META}),
+            patch.object(review, "_submission_events", return_value=[old]),
+            patch.object(review, "_load_config", return_value=CONFIG),
+        ):
+            synchronized, _, _ = review.sync_new_problems(
+                {"problem": untouched_entry()},
+                Path("/repo"),
+                date(2026, 9, 22),
+            )
+        with (
+            patch.object(issue_formatter, "_load_reviews", return_value=synchronized),
+            patch.object(issue_formatter, "_load_config", return_value={"daily_show_limit": 3}),
+        ):
+            _, shown = issue_formatter.build_issue_body(date(2026, 9, 22))
+        self.assertEqual(synchronized, {})
+        self.assertEqual(shown, [])
+
+    def test_nonempty_body_preserves_hidden_problem_map(self):
+        entry = untouched_entry(next_review="2026-09-22")
+        with (
+            patch.object(issue_formatter, "_load_reviews", return_value={"problem": entry}),
+            patch.object(issue_formatter, "_load_config", return_value={"daily_show_limit": 3}),
+        ):
+            body, shown = issue_formatter.build_issue_body(date(2026, 9, 22))
+        self.assertEqual(len(shown), 1)
+        self.assertIn('<!-- problem-map: {"1": "problem"} -->', body)
+
+    def test_cli_writes_machine_readable_has_reviews_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            body_path = Path(directory) / "body.md"
+            output_path = Path(directory) / "output"
+            with (
+                patch.object(issue_formatter, "build_issue_body", return_value=("body", [])),
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "issue_formatter.py",
+                        "--body-file",
+                        str(body_path),
+                        "--github-output",
+                        str(output_path),
+                    ],
+                ),
+            ):
+                issue_formatter.main()
+            self.assertEqual(body_path.read_text(), "body\n")
+            self.assertEqual(
+                output_path.read_text(),
+                "has_reviews=false\npaused=false\n",
+            )
+
+
+class DailyIssueLifecycleTests(unittest.TestCase):
+    def test_empty_day_closes_only_older_matching_daily_issues(self):
+        issues = [
+            {"number": 1, "title": "📚 Daily LeetCode Review — 2026-09-21"},
+            {"number": 2, "title": "📚 Daily LeetCode Review — 2026-09-22"},
+            {"number": 3, "title": "Unrelated issue"},
+            {"number": 4, "title": "📚 Daily LeetCode Review — invalid"},
+            {"number": 5, "title": "📚 Daily LeetCode Review — 2026-09-23"},
+        ]
+        self.assertEqual(
+            daily_issue_lifecycle.older_daily_issues(issues, date(2026, 9, 22)),
+            [1],
+        )
+
+    def test_current_day_issue_remains_open(self):
+        issues = [{"number": 49, "title": "📚 Daily LeetCode Review — 2026-09-22"}]
+        self.assertEqual(
+            daily_issue_lifecycle.older_daily_issues(issues, date(2026, 9, 22)),
+            [],
+        )
+
+    def test_unrelated_issue_remains_open(self):
+        issues = [{"number": 8, "title": "Fix 📚 Daily LeetCode Review — 2026-09-01"}]
+        self.assertEqual(
+            daily_issue_lifecycle.older_daily_issues(issues, date(2026, 9, 22)),
+            [],
+        )
+
+    def test_nonempty_run_does_not_query_or_close_issues(self):
+        with patch.object(daily_issue_lifecycle.subprocess, "run") as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=True
+            )
+        self.assertEqual(closed, [])
+        run.assert_not_called()
+
+    def test_paused_run_does_not_query_or_close_issues(self):
+        with patch.object(daily_issue_lifecycle.subprocess, "run") as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo",
+                date(2026, 9, 22),
+                has_reviews=False,
+                paused=True,
+            )
+        self.assertEqual(closed, [])
+        run.assert_not_called()
+
+    def test_closing_issues_adds_explanatory_comment(self):
+        listed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                [{"number": 7, "title": "📚 Daily LeetCode Review — 2026-09-21"}]
+            ),
+            stderr="",
+        )
+        with patch.object(
+            daily_issue_lifecycle.subprocess,
+            "run",
+            side_effect=[listed, subprocess.CompletedProcess(args=[], returncode=0)],
+        ) as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=False
+            )
+        self.assertEqual(closed, [7])
+        close_command = run.call_args_list[1].args[0]
+        self.assertIn("--comment", close_command)
+        self.assertIn(daily_issue_lifecycle.CLOSING_COMMENT, close_command)
+
+    def test_repeated_empty_run_has_no_duplicate_close_action(self):
+        first = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                [{"number": 7, "title": "📚 Daily LeetCode Review — 2026-09-21"}]
+            ),
+            stderr="",
+        )
+        closed = subprocess.CompletedProcess(args=[], returncode=0)
+        second = subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
+        with patch.object(
+            daily_issue_lifecycle.subprocess,
+            "run",
+            side_effect=[first, closed, second],
+        ) as run:
+            daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=False
+            )
+            daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=False
+            )
+        close_calls = [
+            invocation
+            for invocation in run.call_args_list
+            if invocation.args[0][:3] == ["gh", "issue", "close"]
+        ]
+        self.assertEqual(len(close_calls), 1)
+
+
+class DailyReviewTests(unittest.TestCase):
+    def test_auto_forgot_is_idempotent(self):
+        today = date(2026, 8, 6)
+        reviews = {
+            "problem": untouched_entry(
+                ease_factor=2.5,
+                interval=4,
+                last_review="2026-07-15",
+                next_review="2026-07-22",
+                review_count=2,
+                processed_submission_commits=[],
+            )
+        }
+        config = {**CONFIG, "system_start_date": None}
+
+        for _ in range(2):
+            with (
+                patch.object(review, "_load_config", return_value=config),
+                patch.object(review, "_load_reviews", return_value=reviews),
+                patch.object(review, "sync_new_problems", return_value=(reviews, [], [])),
+                patch.object(review, "_save_reviews"),
+            ):
+                review.run_daily(today)
+
+        self.assertEqual(reviews["problem"]["review_count"], 3)
+        self.assertEqual(reviews["problem"]["next_review"], "2026-08-07")
+
+    def test_run_daily_skips_when_paused(self):
+        config = {**CONFIG, "pause_until": "2026-08-20"}
+        with (
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "_load_reviews") as load,
+        ):
+            review.run_daily(date(2026, 8, 18))
+        load.assert_not_called()
 
     def test_load_config_missing_file_returns_defaults(self):
         with patch.object(review, "_CONFIG_PATH", Path("/nonexistent/config.json")):
             config = review._load_config()
         self.assertIsNone(config["system_start_date"])
-        self.assertEqual(config["auto_forgot_after_days"], 14)
         self.assertEqual(config["daily_show_limit"], 3)
 
-    def test_load_config_bad_json_returns_defaults(self):
-        import tempfile, os
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
-            f.write("not valid json")
-            tmp_path = Path(f.name)
-        try:
-            with patch.object(review, "_CONFIG_PATH", tmp_path):
-                config = review._load_config()
-            self.assertEqual(config["auto_forgot_after_days"], 14)
-        finally:
-            os.unlink(tmp_path)
 
-    # ------------------------------------------------------------------
-    # Idempotency
-    # ------------------------------------------------------------------
-
-    def test_run_daily_twice_same_day_does_not_double_apply_auto_forgot(self):
-        today = date(2026, 8, 6)
-        # overdue > 14 days
-        entry = {
-            "difficulty": "Medium",
-            "ease_factor": 2.5,
-            "interval": 4,
-            "last_review": "2026-07-15",
-            "next_review": "2026-07-22",
-            "review_count": 2,
-            "topic": "Data Structures & Algorithms",
-        }
-        reviews = {"some-problem": dict(entry)}
-
-        config = {
-            "system_start_date": "2026-08-06",
-            "auto_forgot_after_days": 14,
-            "daily_show_limit": 3,
-        }
-
-        # First run
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value=config),
-            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
-            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
-        ):
-            review.run_daily(today)
-
-        ease_after_first = reviews["some-problem"]["ease_factor"]
-        count_after_first = reviews["some-problem"]["review_count"]
-        next_review_after_first = reviews["some-problem"]["next_review"]
-
-        # Second run on same day — next_review is now tomorrow so not overdue
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value=config),
-            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
-            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
-        ):
-            review.run_daily(today)
-
-        self.assertEqual(reviews["some-problem"]["ease_factor"], ease_after_first)
-        self.assertEqual(reviews["some-problem"]["review_count"], count_after_first)
-        self.assertEqual(reviews["some-problem"]["next_review"], next_review_after_first)
-
-    # ------------------------------------------------------------------
-    # Pruning of stale entries (retroactive system_start_date enforcement)
-    # ------------------------------------------------------------------
-
-    def test_stale_entry_no_history_before_start_date_is_pruned(self):
-        """Pre-seeded entry with no review history is removed when its commit predates system_start_date."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {
-            "old-seeded": {
-                "difficulty": "Easy",
-                "ease_factor": 2.5,
-                "interval": 1,
-                "last_review": None,
-                "next_review": "2026-08-12",
-                "review_count": 0,
-                "topic": "Data Structures & Algorithms",
-            }
-        }
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(
-                review,
-                "_problem_solution_files",
-                return_value=[repo_root / "old-seeded" / "s.py"],
-            ),
-            patch.object(review, "_first_commit_date", return_value=date(2026, 7, 1)),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertNotIn("old-seeded", updated)
-        self.assertEqual(new_ids, [])
-        self.assertEqual(backfilled_ids, [])
-
-    def test_stale_entry_with_review_history_is_preserved(self):
-        """Entry with review_count > 0 is never pruned regardless of commit date."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {
-            "coin-change-ii": {
-                "difficulty": "Medium",
-                "ease_factor": 2.65,
-                "interval": 3,
-                "last_review": "2026-08-10",
-                "next_review": "2026-08-13",
-                "review_count": 2,
-                "topic": "Data Structures & Algorithms",
-            }
-        }
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertIn("coin-change-ii", updated)
-        self.assertEqual(backfilled_ids, [])
-        self.assertEqual(updated["coin-change-ii"]["review_count"], 2)
-
-    def test_stale_entry_last_review_not_null_is_preserved(self):
-        """Entry with last_review set (even review_count == 0) is never pruned."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {
-            "some-problem": {
-                "difficulty": "Easy",
-                "ease_factor": 2.5,
-                "interval": 1,
-                "last_review": "2026-08-07",
-                "next_review": "2026-08-08",
-                "review_count": 0,
-                "topic": "Data Structures & Algorithms",
-            }
-        }
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertIn("some-problem", updated)
-        self.assertEqual(backfilled_ids, [])
-
-    def test_no_system_start_date_skips_pruning(self):
-        """When system_start_date is None, no pruning occurs and fallback to today works."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {
-            "old-seeded": {
-                "difficulty": "Easy",
-                "ease_factor": 2.5,
-                "interval": 1,
-                "last_review": None,
-                "next_review": "2026-08-12",
-                "review_count": 0,
-                "topic": "Data Structures & Algorithms",
-            }
-        }
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": None,
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertIn("old-seeded", updated)
-        self.assertEqual(backfilled_ids, [])
-
-    def test_no_commit_dates_with_system_start_date_skips_new_problem(self):
-        """When git history is unavailable and system_start_date is set, new problems are skipped."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "mystery-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Hard"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "mystery-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=None),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": "2026-08-06",
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertNotIn("mystery-problem", updated)
-        self.assertEqual(new_ids, [])
-        self.assertEqual(backfilled_ids, [])
-
-    def test_no_commit_dates_without_system_start_date_falls_back_to_today(self):
-        """When git history is unavailable and no system_start_date, problem is registered with today."""
-        today = date(2026, 8, 12)
-        repo_root = Path("/repo")
-        reviews = {}
-        discovered = {
-            "mystery-problem": {"topic": "Data Structures & Algorithms", "difficulty": "Hard"},
-        }
-        with (
-            patch.object(review, "discover_problems", return_value=discovered),
-            patch.object(review, "_problem_solution_files", return_value=[repo_root / "mystery-problem" / "s.py"]),
-            patch.object(review, "_first_commit_date", return_value=None),
-            patch.object(review, "_load_config", return_value={
-                "system_start_date": None,
-                "auto_forgot_after_days": 14,
-                "daily_show_limit": 3,
-            }),
-        ):
-            updated, new_ids, backfilled_ids = review.sync_new_problems(reviews, repo_root, today)
-
-        self.assertIn("mystery-problem", updated)
-        self.assertEqual(new_ids, ["mystery-problem"])
-        self.assertEqual(backfilled_ids, [])
-        # next_review should be today + 1
-        self.assertEqual(updated["mystery-problem"]["next_review"], "2026-08-13")
-        today = date(2026, 8, 6)
-        # overdue > 14 days
-        entry = {
-            "difficulty": "Medium",
-            "ease_factor": 2.5,
-            "interval": 4,
-            "last_review": "2026-07-15",
-            "next_review": "2026-07-22",
-            "review_count": 2,
-            "topic": "Data Structures & Algorithms",
-        }
-        reviews = {"some-problem": dict(entry)}
-
-        config = {
-            "system_start_date": "2026-08-06",
-            "auto_forgot_after_days": 14,
-            "daily_show_limit": 3,
-        }
-
-        # First run
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value=config),
-            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
-            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
-        ):
-            review.run_daily(today)
-
-        ease_after_first = reviews["some-problem"]["ease_factor"]
-        count_after_first = reviews["some-problem"]["review_count"]
-        next_review_after_first = reviews["some-problem"]["next_review"]
-
-        # Second run on same day — next_review is now tomorrow so not overdue
-        with (
-            patch.object(review, "discover_problems", return_value={}),
-            patch.object(review, "_load_config", return_value=config),
-            patch.object(review, "_load_reviews", return_value={k: dict(v) for k, v in reviews.items()}),
-            patch.object(review, "_save_reviews", side_effect=lambda r: reviews.update(r)),
-        ):
-            review.run_daily(today)
-
-        self.assertEqual(reviews["some-problem"]["ease_factor"], ease_after_first)
-        self.assertEqual(reviews["some-problem"]["review_count"], count_after_first)
-        self.assertEqual(reviews["some-problem"]["next_review"], next_review_after_first)
-
-    # ------------------------------------------------------------------
-    # Pause feature
-    # ------------------------------------------------------------------
-
-    def test_is_paused_returns_true_when_today_before_pause_until(self):
-        config = {"pause_until": "2026-08-25"}
-        self.assertTrue(review.is_paused(config, date(2026, 8, 18)))
-
-    def test_is_paused_returns_true_on_pause_until_date(self):
-        config = {"pause_until": "2026-08-25"}
-        self.assertTrue(review.is_paused(config, date(2026, 8, 25)))
-
-    def test_is_paused_returns_false_after_pause_until(self):
-        config = {"pause_until": "2026-08-25"}
-        self.assertFalse(review.is_paused(config, date(2026, 8, 26)))
-
-    def test_is_paused_returns_false_when_no_pause_until(self):
-        self.assertFalse(review.is_paused({}, date(2026, 8, 18)))
-        self.assertFalse(review.is_paused({"pause_until": None}, date(2026, 8, 18)))
-
-    def test_is_paused_returns_false_on_invalid_date(self):
-        config = {"pause_until": "not-a-date"}
-        self.assertFalse(review.is_paused(config, date(2026, 8, 18)))
-
-    def test_run_daily_skips_when_paused(self):
-        """run_daily should print the pause message and return without touching reviews."""
-        today = date(2026, 8, 18)
-        config = {
-            "system_start_date": None,
-            "auto_forgot_after_days": 14,
-            "daily_show_limit": 3,
-            "pause_until": "2026-08-20",
-        }
-        save_called = []
-        with (
-            patch.object(review, "_load_config", return_value=config),
-            patch.object(review, "_load_reviews", return_value={}),
-            patch.object(review, "_save_reviews", side_effect=lambda r: save_called.append(r)),
-        ):
-            review.run_daily(today)
-
-        # reviews should never be saved when paused
-        self.assertEqual(save_called, [])
-
-
-import sys as _sys
-_sys.path.insert(0, str(Path(__file__).parent / "scripts"))
-import process_review_comment as prc
-import scheduler
-
-
-class ResetEntryTests(unittest.TestCase):
-    def test_reset_clears_scheduling_fields(self):
-        today = date(2026, 8, 26)
-        entry = {
-            "difficulty": "Hard",
-            "topic": "Graphs",
-            "last_review": "2026-08-20",
-            "next_review": "2026-08-30",
-            "interval": 15,
-            "ease_factor": 3.0,
-            "review_count": 7,
-        }
-        result = scheduler.reset_entry(entry, today)
-        self.assertIsNone(result["last_review"])
-        self.assertEqual(result["next_review"], "2026-08-27")
-        self.assertEqual(result["interval"], 1)
-        self.assertEqual(result["ease_factor"], 2.5)
-        self.assertEqual(result["review_count"], 0)
-
-    def test_reset_preserves_difficulty_and_topic(self):
-        today = date(2026, 8, 26)
-        entry = {
-            "difficulty": "Hard",
-            "topic": "Graphs",
-            "last_review": "2026-08-20",
-            "next_review": "2026-08-30",
-            "interval": 15,
-            "ease_factor": 3.0,
-            "review_count": 7,
-        }
-        result = scheduler.reset_entry(entry, today)
+class SchedulerAndCommentTests(unittest.TestCase):
+    def test_reset_preserves_metadata_and_resets_schedule(self):
+        entry = untouched_entry(
+            difficulty="Hard",
+            topic="Graphs",
+            last_review="2026-08-20",
+            next_review="2026-08-30",
+            interval=15,
+            ease_factor=3.0,
+            review_count=7,
+            processed_submission_commits=["existing"],
+        )
+        result = scheduler.reset_entry(entry, date(2026, 8, 26))
         self.assertEqual(result["difficulty"], "Hard")
         self.assertEqual(result["topic"], "Graphs")
+        self.assertIsNone(result["last_review"])
+        self.assertEqual(result["next_review"], "2026-08-27")
+        self.assertEqual(result["review_count"], 0)
+        self.assertEqual(result["processed_submission_commits"], ["existing"])
+        self.assertEqual(entry["review_count"], 7)
 
-    def test_reset_does_not_mutate_original(self):
-        today = date(2026, 8, 26)
-        entry = {
-            "difficulty": "Medium",
-            "topic": "Arrays",
-            "last_review": "2026-08-10",
-            "next_review": "2026-08-20",
-            "interval": 10,
-            "ease_factor": 2.8,
-            "review_count": 3,
-        }
-        scheduler.reset_entry(entry, today)
-        self.assertEqual(entry["interval"], 10)
-        self.assertEqual(entry["review_count"], 3)
+    def test_reset_cursor_prevents_historical_submission_replay(self):
+        events = [submission("existing", "2026-09-19T12:00:00+00:00")]
+        reset = scheduler.reset_entry(
+            untouched_entry(processed_submission_commits=["existing"]),
+            date(2026, 9, 22),
+        )
+        with (
+            patch.object(review, "discover_problems", return_value={"problem": META}),
+            patch.object(review, "_submission_events", return_value=events),
+            patch.object(review, "_load_config", return_value=CONFIG),
+        ):
+            updated, _, completed = review.sync_new_problems(
+                {"problem": reset},
+                Path("/repo"),
+                date(2026, 9, 22),
+            )
+        self.assertEqual(updated["problem"]["next_review"], "2026-09-23")
+        self.assertEqual(completed, [])
 
-    def test_reset_uses_today_by_default(self):
-        entry = {"difficulty": "Easy", "topic": "Arrays", "interval": 5, "ease_factor": 2.5, "review_count": 2}
-        result = scheduler.reset_entry(entry)
-        # next_review should be tomorrow
-        from datetime import timedelta
-        self.assertEqual(result["next_review"], (date.today() + timedelta(days=1)).isoformat())
-
-
-class ResetParseCommandsTests(unittest.TestCase):
-    def test_parse_reset_command(self):
-        commands = prc.parse_commands("review 3 reset")
-        self.assertEqual(commands, [(3, "Reset")])
-
-    def test_parse_reset_case_insensitive(self):
-        commands = prc.parse_commands("review 2 RESET")
-        self.assertEqual(commands, [(2, "Reset")])
-
-    def test_reset_alongside_other_commands(self):
-        body = "review 1 easy\nreview 2 reset\nreview 3 forgot"
-        commands = prc.parse_commands(body)
-        self.assertEqual(commands, [(1, "Easy"), (2, "Reset"), (3, "Forgot")])
-
-
-class ProcessCommandsResetTests(unittest.TestCase):
-    def test_process_reset_command_updates_entry(self):
-        today = date(2026, 8, 26)
-        problem_map = {"1": "two-sum"}
-        reviews = {
-            "two-sum": {
-                "difficulty": "Easy",
-                "topic": "Arrays",
-                "last_review": "2026-08-20",
-                "next_review": "2026-08-30",
-                "interval": 15,
-                "ease_factor": 3.0,
-                "review_count": 7,
-            }
-        }
-        results, errors = prc.process_commands([(1, "Reset")], problem_map, reviews, today)
-        self.assertEqual(errors, [])
-        self.assertEqual(len(results), 1)
-        r = results[0]
-        self.assertEqual(r["rating"], "Reset")
-        self.assertEqual(r["interval"], 1)
-        from datetime import date as _date
-        self.assertEqual(r["next_review"], _date(2026, 8, 27))
-
-        entry = reviews["two-sum"]
-        self.assertEqual(entry["interval"], 1)
-        self.assertIsNone(entry["last_review"])
-        self.assertEqual(entry["difficulty"], "Easy")
-        self.assertEqual(entry["topic"], "Arrays")
-
-
-
-
-class RemoveCommandTests(unittest.TestCase):
-    def test_parse_remove_command(self):
-        commands = prc.parse_commands("review 2 remove")
-        self.assertEqual(commands, [(2, "Remove")])
-
-    def test_parse_remove_case_insensitive(self):
-        commands = prc.parse_commands("review 4 REMOVE")
-        self.assertEqual(commands, [(4, "Remove")])
-
-    def test_process_remove_deletes_entry(self):
-        today = date(2026, 8, 26)
-        problem_map = {"1": "two-sum"}
-        reviews = {
-            "two-sum": {
-                "difficulty": "Easy",
-                "topic": "Arrays",
-                "last_review": "2026-08-20",
-                "next_review": "2026-08-30",
-                "interval": 15,
-                "ease_factor": 3.0,
-                "review_count": 7,
-            }
-        }
-        results, errors = prc.process_commands([(1, "Remove")], problem_map, reviews, today)
-        self.assertEqual(errors, [])
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["rating"], "Remove")
-        self.assertEqual(results[0]["name"], "Two Sum")
-        self.assertNotIn("two-sum", reviews)
-
-    def test_process_remove_result_has_no_next_review_or_interval(self):
-        today = date(2026, 8, 26)
-        problem_map = {"1": "two-sum"}
-        reviews = {"two-sum": {"difficulty": "Easy", "topic": "Arrays", "interval": 5, "ease_factor": 2.5, "review_count": 1}}
-        results, _ = prc.process_commands([(1, "Remove")], problem_map, reviews, today)
-        self.assertNotIn("next_review", results[0])
-        self.assertNotIn("interval", results[0])
-
-    def test_build_reply_remove_single(self):
-        results = [{"num": 1, "name": "Two Sum", "rating": "Remove"}]
-        reply = prc.build_reply(results, [])
-        self.assertIn("Remove", reply)
-        self.assertIn("The problem has been removed from the review pool.", reply)
-        self.assertNotIn("Next review", reply)
-
-    def test_build_reply_remove_multi(self):
-        results = [
-            {"num": 1, "name": "Two Sum", "rating": "Remove"},
-            {"num": 2, "name": "Binary Search", "rating": "Easy",
-             "next_review": date(2026, 9, 5), "interval": 10},
-        ]
-        reply = prc.build_reply(results, [])
-        self.assertIn("Removed from the review pool", reply)
-        self.assertIn("Binary Search", reply)
-
-
-class PauseCommandParsingTests(unittest.TestCase):
-    def test_parse_pause_command_basic(self):
-        self.assertEqual(prc.parse_pause_command("pause 7"), 7)
-
-    def test_parse_pause_command_case_insensitive(self):
-        self.assertEqual(prc.parse_pause_command("PAUSE 3"), 3)
-
-    def test_parse_pause_command_leading_whitespace(self):
-        self.assertEqual(prc.parse_pause_command("  pause 5  "), 5)
-
-    def test_parse_pause_command_not_present(self):
-        self.assertIsNone(prc.parse_pause_command("review 1 easy"))
-        self.assertIsNone(prc.parse_pause_command("hello world"))
-
-    def test_parse_pause_command_clamps_min(self):
-        self.assertEqual(prc.parse_pause_command("pause 0"), 1)
-
-    def test_parse_pause_command_clamps_max(self):
+    def test_parse_ratings_reset_remove_and_pause(self):
+        self.assertEqual(
+            prc.parse_commands(
+                "review 1 easy\nreview 2 MEDIUM\nreview 3 forgot\nreview 4 reset\nreview 5 remove"
+            ),
+            [(1, "Easy"), (2, "Medium"), (3, "Forgot"), (4, "Reset"), (5, "Remove")],
+        )
         self.assertEqual(prc.parse_pause_command("pause 999"), 365)
 
-    def test_parse_pause_command_multiline_picks_first(self):
-        body = "some text\npause 10\npause 20"
-        self.assertEqual(prc.parse_pause_command(body), 10)
+    def test_process_rating_updates_entry(self):
+        reviews = {"problem": untouched_entry()}
+        results, errors = prc.process_commands(
+            [(1, "Easy")],
+            {"1": "problem"},
+            reviews,
+            date(2026, 9, 22),
+            comment_id=123,
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["rating"], "Easy")
+        self.assertEqual(reviews["problem"]["review_count"], 1)
+        self.assertEqual(reviews["problem"]["processed_rating_comment_ids"], ["123"])
+
+        repeated_results, repeated_errors = prc.process_commands(
+            [(1, "Easy")],
+            {"1": "problem"},
+            reviews,
+            date(2026, 9, 22),
+            comment_id=123,
+        )
+        self.assertEqual(repeated_results, [])
+        self.assertEqual(repeated_errors, [])
+        self.assertEqual(reviews["problem"]["review_count"], 1)
+
+    def test_process_reset_and_remove(self):
+        reviews = {
+            "reset-me": untouched_entry(review_count=2),
+            "remove-me": untouched_entry(review_count=2),
+        }
+        results, errors = prc.process_commands(
+            [(1, "Reset"), (2, "Remove")],
+            {"1": "reset-me", "2": "remove-me"},
+            reviews,
+            date(2026, 9, 22),
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual([result["rating"] for result in results], ["Reset", "Remove"])
+        self.assertEqual(reviews["reset-me"]["review_count"], 0)
+        self.assertNotIn("remove-me", reviews)
 
 
 if __name__ == "__main__":
