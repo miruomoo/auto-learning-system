@@ -115,7 +115,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
     due_items.sort(key=lambda x: _sort_key(x, today))
 
-    max_daily: int = config["daily_show_limit"]
+    max_daily = max(1, int(config["daily_show_limit"]))
     shown_items = due_items[:max_daily]
     deferred_items = due_items[max_daily:]
 
@@ -243,8 +243,11 @@ def main() -> None:
     else:
         print(body)
     if args.github_output:
+        effective_today = today or date.today()
+        paused = _is_paused(_load_config(), effective_today)
         with args.github_output.open("a") as fh:
             fh.write(f"has_reviews={'true' if shown_items else 'false'}\n")
+            fh.write(f"paused={'true' if paused else 'false'}\n")
 
 
 if __name__ == "__main__":

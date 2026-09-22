@@ -268,7 +268,10 @@ class FormatterAuthorityTests(unittest.TestCase):
             ):
                 issue_formatter.main()
             self.assertEqual(body_path.read_text(), "body\n")
-            self.assertEqual(output_path.read_text(), "has_reviews=false\n")
+            self.assertEqual(
+                output_path.read_text(),
+                "has_reviews=false\npaused=false\n",
+            )
 
 
 class DailyIssueLifecycleTests(unittest.TestCase):
@@ -303,6 +306,17 @@ class DailyIssueLifecycleTests(unittest.TestCase):
         with patch.object(daily_issue_lifecycle.subprocess, "run") as run:
             closed = daily_issue_lifecycle.close_stale_daily_issues(
                 "owner/repo", date(2026, 9, 22), has_reviews=True
+            )
+        self.assertEqual(closed, [])
+        run.assert_not_called()
+
+    def test_paused_run_does_not_query_or_close_issues(self):
+        with patch.object(daily_issue_lifecycle.subprocess, "run") as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo",
+                date(2026, 9, 22),
+                has_reviews=False,
+                paused=True,
             )
         self.assertEqual(closed, [])
         run.assert_not_called()
@@ -412,6 +426,7 @@ class SchedulerAndCommentTests(unittest.TestCase):
             interval=15,
             ease_factor=3.0,
             review_count=7,
+            processed_submission_commits=["existing"],
         )
         result = scheduler.reset_entry(entry, date(2026, 8, 26))
         self.assertEqual(result["difficulty"], "Hard")
@@ -419,7 +434,27 @@ class SchedulerAndCommentTests(unittest.TestCase):
         self.assertIsNone(result["last_review"])
         self.assertEqual(result["next_review"], "2026-08-27")
         self.assertEqual(result["review_count"], 0)
+        self.assertEqual(result["processed_submission_commits"], ["existing"])
         self.assertEqual(entry["review_count"], 7)
+
+    def test_reset_cursor_prevents_historical_submission_replay(self):
+        events = [submission("existing", "2026-09-19T12:00:00+00:00")]
+        reset = scheduler.reset_entry(
+            untouched_entry(processed_submission_commits=["existing"]),
+            date(2026, 9, 22),
+        )
+        with (
+            patch.object(review, "discover_problems", return_value={"problem": META}),
+            patch.object(review, "_submission_events", return_value=events),
+            patch.object(review, "_load_config", return_value=CONFIG),
+        ):
+            updated, _, completed = review.sync_new_problems(
+                {"problem": reset},
+                Path("/repo"),
+                date(2026, 9, 22),
+            )
+        self.assertEqual(updated["problem"]["next_review"], "2026-09-23")
+        self.assertEqual(completed, [])
 
     def test_parse_ratings_reset_remove_and_pause(self):
         self.assertEqual(

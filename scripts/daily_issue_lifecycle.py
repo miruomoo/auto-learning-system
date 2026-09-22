@@ -17,7 +17,7 @@ def _issue_date(title: str) -> date | None:
     if not title.startswith(DAILY_ISSUE_PREFIX):
         return None
     try:
-        return date.fromisoformat(title.removeprefix(DAILY_ISSUE_PREFIX))
+        return date.fromisoformat(title.removeprefix(DAILY_ISSUE_PREFIX)[:10])
     except ValueError:
         return None
 
@@ -32,9 +32,14 @@ def older_daily_issues(issues: list[dict], today: date) -> list[int]:
     return sorted(matches)
 
 
-def close_stale_daily_issues(repo: str, today: date, has_reviews: bool) -> list[int]:
+def close_stale_daily_issues(
+    repo: str,
+    today: date,
+    has_reviews: bool,
+    paused: bool = False,
+) -> list[int]:
     """Close stale daily issues only when the current run has no reviews."""
-    if has_reviews:
+    if has_reviews or paused:
         return []
 
     result = subprocess.run(
@@ -78,11 +83,13 @@ def main() -> None:
     parser.add_argument("--repo", required=True)
     parser.add_argument("--today", required=True, type=date.fromisoformat)
     parser.add_argument("--has-reviews", required=True, choices=["true", "false"])
+    parser.add_argument("--paused", required=True, choices=["true", "false"])
     args = parser.parse_args()
     closed = close_stale_daily_issues(
         args.repo,
         args.today,
         has_reviews=args.has_reviews == "true",
+        paused=args.paused == "true",
     )
     print(f"Closed {len(closed)} older daily review issue(s).")
 

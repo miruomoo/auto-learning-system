@@ -66,7 +66,8 @@ jobs:
           python scripts/daily_issue_lifecycle.py \
             --repo "${{ github.repository }}" \
             --today "${{ steps.formatter.outputs.today }}" \
-            --has-reviews "${{ steps.formatter.outputs.has_reviews }}"
+            --has-reviews "${{ steps.formatter.outputs.has_reviews }}" \
+            --paused "${{ steps.formatter.outputs.paused }}"
 
       - name: Commit updated review metadata
         run: |

@@ -15,7 +15,7 @@ Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dis
 1. **`scripts/review.py`** — consumes new submission commits and determines which problems are due, then updates `.leetcode-review/reviews.json`.
 2. **`scripts/issue_formatter.py`** — reads the synchronized metadata and formats the day's review set into a GitHub Issue body.
 3. A GitHub Issue titled `📚 Daily LeetCode Review — YYYY-MM-DD` is created (or updated if one already exists for today).
-4. If the day has no scheduled reviews, older open issues with the same daily-review title prefix are closed with an automated comment. Today's issue and unrelated issues remain open.
+4. If an unpaused day has no scheduled reviews, older open issues with the same daily-review title prefix are closed with an automated comment. Today's issue and unrelated issues remain open.
 5. Updated review metadata is committed back to the repository.
 
 ### Submission tracking and migration
