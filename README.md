@@ -24,7 +24,13 @@ Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dis
 
 An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval, rolling Saturday or Sunday dates forward to Monday. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes, and each comment is applied at most once using its GitHub comment ID.
 
-On the first run after upgrading, entries with established review progress keep their existing schedule, difficulty, and topic; currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
+On the first run after upgrading, entries with established review progress keep their existing schedule and topic; their difficulty is refreshed from the vendored NeetCode metadata. Currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
+
+### Difficulty metadata
+
+Difficulty labels come from the compact `scripts/neetcode_difficulties.json` mapping vendored from NeetCode's public `.problemSiteData.json`; the daily workflow does not fetch remote metadata. Lookup uses a LeetCode problem number or canonical slug first, then the local aliases stored in that file. Unmatched problems are labelled `Unknown`, and difficulty does not affect review priority.
+
+When adding problems not covered by the mapping, refresh it from the pinned upstream source recorded in its `source` and `source_revision` fields, then add any renamed local folder to `aliases`.
 
 ### 2. Process Review Comment (`process-review-comment.yml`)
 
@@ -44,6 +50,7 @@ Triggered whenever a comment containing the word `review` is posted on an open i
 scripts/
   review.py                 ← selects problems due today & updates schedule
   issue_formatter.py        ← formats the daily review GitHub Issue body
+  neetcode_difficulties.json← vendored difficulty mapping and local aliases
   process_review_comment.py ← handles review feedback from issue comments
   daily_issue_lifecycle.py  ← closes stale daily issues on empty days
   discovery.py              ← scans the repo for solution files

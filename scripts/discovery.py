@@ -8,80 +8,51 @@ Topic inference
 ---------------
 The parent folder name is used as the topic (e.g. "Data Structures & Algorithms").
 
-Difficulty inference
---------------------
-A lightweight keyword lookup against the problem ID is used to give a best-effort
-difficulty label.  The label can be overridden by storing an explicit
-``"difficulty"`` key in reviews.json.
+Difficulty lookup
+-----------------
+Difficulty comes from a vendored subset of NeetCode's public problem metadata.
+Canonical slugs and LeetCode problem numbers are matched before local aliases.
+Problems without an authoritative match are labelled ``"Unknown"``.
 """
 
 from __future__ import annotations
 
-import os
+import json
+import re
+from functools import lru_cache
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Keyword-based difficulty heuristics
-# ---------------------------------------------------------------------------
+_DIFFICULTY_DATA_PATH = Path(__file__).with_name("neetcode_difficulties.json")
+_VALID_DIFFICULTIES = {"Easy", "Medium", "Hard"}
 
-_HARD_KEYWORDS = {
-    "maximum-path-sum",
-    "serialize-and-deserialize",
-    "sliding-window-maximum",
-    "minimum-window",
-    "alien-dictionary",
-    "trapping-rain-water",
-    "median-of-two-sorted-arrays",
-    "word-ladder",
-    "word-search",
-    "search-for-word-ii",
-    "swim-in-rising-water",
-    "cheapest-flight-path",
-    "minimum-cost-to-connect-points",
-    "min-cost-to-connect-points",
-    "distinct-subsequences",
-    "edit-distance",
-    "interleaving-string",
-    "regular-expression-matching",
-    "largest-rectangle-in-histogram",
-    "count-paths",
-    "n-queens",
-    "palindrome-partitioning-ii",
-    "burst-balloons",
-    "buy-and-sell-crypto-with-cooldown",
-    "binary-tree-from-preorder-and-inorder-traversal",
-}
 
-_EASY_KEYWORDS = {
-    "two-integer-sum",
-    "binary-search",
-    "valid-palindrome",
-    "valid-anagram",
-    "counting-bits",
-    "climbing-stairs",
-    "same-binary-tree",
-    "balanced-binary-tree",
-    "binary-tree-diameter",
-    "count-good-nodes-in-binary-tree",
-    "invert-binary-tree",
-    "maximum-depth-of-binary-tree",
-    "buy-and-sell-crypto",
-    "single-number",
-    "reverse-bits",
-    "number-of-1-bits",
-    "missing-number",
-    "python-hello-world",
-}
+@lru_cache(maxsize=1)
+def _difficulty_data() -> tuple[dict, dict, dict]:
+    with _DIFFICULTY_DATA_PATH.open() as fh:
+        data = json.load(fh)
+    problems = data["problems"]
+    aliases = data["aliases"]
+    by_number = {
+        str(metadata["number"]): metadata
+        for metadata in problems.values()
+    }
+    return problems, aliases, by_number
 
 
 def infer_difficulty(problem_id: str) -> str:
-    """Best-effort difficulty from the problem slug."""
-    slug = problem_id.lower()
-    if slug in _HARD_KEYWORDS:
-        return "Hard"
-    if slug in _EASY_KEYWORDS:
-        return "Easy"
-    return "Medium"
+    """Return NeetCode's difficulty for a number, canonical slug, or local alias."""
+    slug = problem_id.lower().strip().strip("/")
+    problems, aliases, by_number = _difficulty_data()
+
+    number_match = re.match(r"^0*(\d+)(?:-|$)", slug)
+    metadata = by_number.get(str(int(number_match.group(1)))) if number_match else None
+    if metadata is None:
+        metadata = problems.get(slug)
+    if metadata is None:
+        metadata = problems.get(aliases.get(slug, ""))
+
+    difficulty = metadata.get("difficulty") if metadata else None
+    return difficulty if difficulty in _VALID_DIFFICULTIES else "Unknown"
 
 
 # ---------------------------------------------------------------------------

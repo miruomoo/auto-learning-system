@@ -30,7 +30,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "buy-and-sell-crypto-with-cooldown": {
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "ease_factor": 2.4,
     "interval": 5,
     "last_review": "2026-09-28",
@@ -82,7 +82,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "count-subsequences": {
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "ease_factor": 2.9,
     "interval": 41,
     "last_review": "2026-09-19",
@@ -134,7 +134,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "edit-distance": {
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "ease_factor": 2.9,
     "interval": 41,
     "last_review": "2026-09-18",
@@ -173,7 +173,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "longest-increasing-path-in-matrix": {
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "ease_factor": 2.15,
     "interval": 4,
     "last_review": "2026-09-24",
@@ -325,7 +325,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "validate-parentheses": {
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "ease_factor": 2.45,
     "interval": 2,
     "last_review": "2026-09-28",

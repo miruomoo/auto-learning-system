@@ -51,7 +51,7 @@ def new_entry(today: date | None = None) -> dict:
     if today is None:
         today = date.today()
     return {
-        "difficulty": "Medium",
+        "difficulty": "Unknown",
         "topic": "Unknown",
         "last_review": None,
         "next_review": review_date(today, 1).isoformat(),
@@ -103,7 +103,7 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
     if today is None:
         today = date.today()
     reset = {
-        "difficulty": entry.get("difficulty", "Medium"),
+        "difficulty": entry.get("difficulty", "Unknown"),
         "topic": entry.get("topic", "Unknown"),
         "last_review": None,
         "next_review": review_date(today, 1).isoformat(),

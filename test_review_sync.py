@@ -10,6 +10,7 @@ from unittest.mock import Mock, call, patch
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
 
 import daily_issue_lifecycle
+import discovery
 import issue_formatter
 import process_review_comment as prc
 import review
@@ -130,7 +131,7 @@ class SubmissionSyncTests(unittest.TestCase):
         rerun, _, _ = self.sync(updated, events)
         self.assertEqual(rerun, snapshot)
 
-    def test_migration_preserves_established_rating_history(self):
+    def test_migration_preserves_schedule_and_refreshes_difficulty(self):
         existing = untouched_entry(
             difficulty="Medium",
             topic="Graphs",
@@ -141,6 +142,7 @@ class SubmissionSyncTests(unittest.TestCase):
             review_count=4,
         )
         expected_schedule = dict(existing)
+        del expected_schedule["difficulty"]
         events = [
             submission("eligible-one", "2026-08-10T12:00:00+00:00"),
             submission("eligible-two", "2026-09-12T12:00:00+00:00"),
@@ -150,6 +152,7 @@ class SubmissionSyncTests(unittest.TestCase):
 
         for field, value in expected_schedule.items():
             self.assertEqual(updated["problem"][field], value)
+        self.assertEqual(updated["problem"]["difficulty"], "Hard")
         self.assertEqual(
             updated["problem"]["processed_submission_commits"],
             ["eligible-one", "eligible-two"],
@@ -272,6 +275,65 @@ class FormatterAuthorityTests(unittest.TestCase):
                 output_path.read_text(),
                 "has_reviews=false\npaused=false\n",
             )
+
+
+class DifficultyMetadataTests(unittest.TestCase):
+    def test_canonical_slug_problem_number_and_local_aliases_are_supported(self):
+        self.assertEqual(discovery.infer_difficulty("valid-parentheses"), "Easy")
+        self.assertEqual(discovery.infer_difficulty("0020-valid-parentheses"), "Easy")
+        self.assertEqual(discovery.infer_difficulty("20"), "Easy")
+        self.assertEqual(discovery.infer_difficulty("validate-parentheses"), "Easy")
+        self.assertEqual(
+            discovery.infer_difficulty("buy-and-sell-crypto-with-cooldown"),
+            "Medium",
+        )
+
+    def test_unmatched_problem_is_unknown(self):
+        self.assertEqual(discovery.infer_difficulty("unlisted-problem"), "Unknown")
+        self.assertEqual(
+            scheduler.new_entry(date(2026, 9, 22))["difficulty"],
+            "Unknown",
+        )
+
+    def test_vendored_metadata_covers_current_solution_folders(self):
+        repo_root = Path(__file__).parent
+        for root_name in discovery._SOLUTION_ROOTS:
+            root = repo_root / root_name
+            if not root.is_dir():
+                continue
+            for problem_dir in root.iterdir():
+                if problem_dir.is_dir() and discovery._has_solution(problem_dir):
+                    with self.subTest(problem=problem_dir.name):
+                        self.assertNotEqual(
+                            discovery.infer_difficulty(problem_dir.name),
+                            "Unknown",
+                        )
+
+    def test_review_priority_does_not_use_difficulty(self):
+        today = date(2026, 9, 22)
+        unknown = untouched_entry(
+            difficulty="Unknown",
+            next_review="2026-09-20",
+        )
+        hard = untouched_entry(
+            difficulty="Hard",
+            next_review="2026-09-22",
+        )
+        items = [("hard", hard), ("unknown", unknown)]
+
+        review_order = sorted(items, key=lambda item: review._sort_key(item, today))
+        formatter_order = sorted(
+            items,
+            key=lambda item: issue_formatter._sort_key(item, today),
+        )
+        self.assertEqual(
+            [problem_id for problem_id, _ in review_order],
+            ["unknown", "hard"],
+        )
+        self.assertEqual(
+            [problem_id for problem_id, _ in formatter_order],
+            ["unknown", "hard"],
+        )
 
 
 class DailyIssueLifecycleTests(unittest.TestCase):

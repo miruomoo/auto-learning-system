@@ -43,8 +43,6 @@ def _load_reviews() -> dict:
     return {}
 
 
-_DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
-
 _CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 
@@ -73,11 +71,10 @@ def _is_paused(config: dict, today: date) -> bool:
 
 def _sort_key(item: tuple[str, dict], today: date):
     problem_id, entry = item
-    diff_rank = _DIFFICULTY_ORDER.get(entry.get("difficulty", "Unknown"), 3)
     overdue = days_overdue(entry, today)
     ease = entry.get("ease_factor", 2.5)
     last = entry.get("last_review") or "0000-00-00"
-    return (diff_rank, -overdue, ease, last)
+    return (-overdue, ease, last, problem_id)
 
 
 def _display_name(problem_id: str) -> str:
@@ -156,7 +153,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     if total_due > shown_count:
         summary_line = (
             f"Showing {shown_count} of {total_due} problems due today "
-            f"(most overdue / hardest first). "
+            f"(most overdue first). "
             f"The remaining {total_due - shown_count} will appear in tomorrow's issue."
         )
     else:

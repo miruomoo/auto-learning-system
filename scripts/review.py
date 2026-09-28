@@ -12,7 +12,7 @@ When called without arguments (the normal GitHub Actions path) it:
 3. Registers any newly discovered problems (first review scheduled for tomorrow).
 4. Saves the updated reviews.json.
 5. Prints a human-readable report of all problems due today, sorted by:
-      Hard first → most overdue → lowest ease factor → oldest review date.
+      most overdue → lowest ease factor → oldest review date.
 
 When called with --rate it applies a rating to a single problem and exits.
 
@@ -240,8 +240,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
         else:
             if existing.get("topic") in (None, "Unknown"):
                 existing["topic"] = meta["topic"]
-            if existing.get("difficulty") in (None, "Unknown"):
-                existing["difficulty"] = meta["difficulty"]
+            existing["difficulty"] = meta["difficulty"]
 
             if "processed_submission_commits" not in existing:
                 if _has_established_schedule(existing):
@@ -286,17 +285,12 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
 # Sorting helpers
 # ---------------------------------------------------------------------------
 
-_DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
-
-
 def _sort_key(item: tuple[str, dict], today: date):
     problem_id, entry = item
-    diff_rank = _DIFFICULTY_ORDER.get(entry.get("difficulty", "Unknown"), 3)
     overdue = days_overdue(entry, today)
     ease = entry.get("ease_factor", 2.5)
     last = entry.get("last_review") or "0000-00-00"
-    # Sort: diff ASC, overdue DESC (negate), ease ASC, last ASC
-    return (diff_rank, -overdue, ease, last)
+    return (-overdue, ease, last, problem_id)
 
 
 # ---------------------------------------------------------------------------
