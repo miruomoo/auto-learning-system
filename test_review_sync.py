@@ -76,7 +76,7 @@ class SubmissionSyncTests(unittest.TestCase):
 
         entry = updated["problem"]
         self.assertEqual(entry["last_review"], "2026-09-19")
-        self.assertEqual(entry["next_review"], "2026-09-20")
+        self.assertEqual(entry["next_review"], "2026-09-21")
         self.assertEqual(
             entry["processed_submission_commits"],
             ["08892ef2af64cc3b9282f419c8f5a6e1f8341a46"],
@@ -417,6 +417,24 @@ class DailyReviewTests(unittest.TestCase):
 
 
 class SchedulerAndCommentTests(unittest.TestCase):
+    def test_review_dates_roll_weekends_forward_to_monday(self):
+        cases = [
+            (date(2026, 9, 25), 1, date(2026, 9, 28)),
+            (date(2026, 9, 26), 1, date(2026, 9, 28)),
+            (date(2026, 9, 27), 1, date(2026, 9, 28)),
+        ]
+        for start, interval, expected in cases:
+            with self.subTest(start=start):
+                self.assertEqual(scheduler.review_date(start, interval), expected)
+
+    def test_stored_weekend_dates_are_due_not_overdue_on_monday(self):
+        monday = date(2026, 9, 28)
+        for next_review in ("2026-09-26", "2026-09-27"):
+            with self.subTest(next_review=next_review):
+                entry = untouched_entry(next_review=next_review)
+                self.assertTrue(scheduler.is_due(entry, monday))
+                self.assertEqual(scheduler.days_overdue(entry, monday), 0)
+
     def test_reset_preserves_metadata_and_resets_schedule(self):
         entry = untouched_entry(
             difficulty="Hard",

@@ -32,6 +32,20 @@ def _clamp_ease(ease: float) -> float:
     return max(_MIN_EASE, ease)
 
 
+def next_weekday(value: date) -> date:
+    """Roll Saturday/Sunday dates forward to Monday."""
+    if value.weekday() == 5:
+        return value + timedelta(days=2)
+    if value.weekday() == 6:
+        return value + timedelta(days=1)
+    return value
+
+
+def review_date(start: date, interval: int) -> date:
+    """Return a review date that never falls on a weekend."""
+    return next_weekday(start + timedelta(days=interval))
+
+
 def new_entry(today: date | None = None) -> dict:
     """Return the default metadata for a newly discovered problem."""
     if today is None:
@@ -40,7 +54,7 @@ def new_entry(today: date | None = None) -> dict:
         "difficulty": "Medium",
         "topic": "Unknown",
         "last_review": None,
-        "next_review": (today + timedelta(days=1)).isoformat(),
+        "next_review": review_date(today, 1).isoformat(),
         "interval": 1,
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
@@ -73,7 +87,7 @@ def schedule(entry: dict, rating: Rating, today: date | None = None) -> dict:
     entry["ease_factor"] = round(ease, 4)
     entry["interval"] = interval
     entry["last_review"] = today.isoformat()
-    entry["next_review"] = (today + timedelta(days=interval)).isoformat()
+    entry["next_review"] = review_date(today, interval).isoformat()
     entry["review_count"] = entry.get("review_count", 0) + 1
     return entry
 
@@ -92,7 +106,7 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
         "difficulty": entry.get("difficulty", "Medium"),
         "topic": entry.get("topic", "Unknown"),
         "last_review": None,
-        "next_review": (today + timedelta(days=1)).isoformat(),
+        "next_review": review_date(today, 1).isoformat(),
         "interval": 1,
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
@@ -110,7 +124,7 @@ def is_due(entry: dict, today: date | None = None) -> bool:
     next_review = entry.get("next_review")
     if next_review is None:
         return True
-    return date.fromisoformat(next_review) <= today
+    return next_weekday(date.fromisoformat(next_review)) <= today
 
 
 def days_overdue(entry: dict, today: date | None = None) -> int:
@@ -120,5 +134,6 @@ def days_overdue(entry: dict, today: date | None = None) -> int:
     next_review = entry.get("next_review")
     if next_review is None:
         return 0
-    delta = (today - date.fromisoformat(next_review)).days
+    due_date = next_weekday(date.fromisoformat(next_review))
+    delta = (today - due_date).days
     return max(0, delta)
