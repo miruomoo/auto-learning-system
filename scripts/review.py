@@ -29,7 +29,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 # Allow running from repo root without installing a package
@@ -37,7 +37,7 @@ _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
 from discovery import discover_problems  # noqa: E402
-from scheduler import days_overdue, is_due, new_entry, schedule  # noqa: E402
+from scheduler import days_overdue, is_due, new_entry, review_date, schedule  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -187,7 +187,7 @@ def _record_submission(entry: dict, event: SubmissionEvent) -> None:
     submission_date = event.submission_date
     interval = entry.get("interval", 1)
     entry["last_review"] = submission_date.isoformat()
-    entry["next_review"] = (submission_date + timedelta(days=interval)).isoformat()
+    entry["next_review"] = review_date(submission_date, interval).isoformat()
     entry.setdefault("processed_submission_commits", []).append(event.commit)
 
 
