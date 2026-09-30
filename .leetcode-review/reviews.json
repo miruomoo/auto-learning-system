@@ -11,7 +11,8 @@
     ],
     "processed_submission_commits": [
       "54b9e1d97401184bdabf14db85e98aab9b164680",
-      "c51a2578c0a4ed78bc141d460b4a1671d3e4d58b"
+      "c51a2578c0a4ed78bc141d460b4a1671d3e4d58b",
+      "f396600a9d1e62a9edf502991fa30ff3894d7fc6"
     ],
     "review_count": 3,
     "topic": "Data Structures & Algorithms"
@@ -197,7 +198,8 @@
       "124a5c3bad6c23c8c2001993599966da9337a30b",
       "72c595527144e3ea447b614f5b30d8b57f63b7c1",
       "95423a5c1f72bbe7a56c5aeb7d1f10ac720b57ee",
-      "efd5c6b8eca65c1c2b282cbfc2bf7c9f8ee51f4d"
+      "efd5c6b8eca65c1c2b282cbfc2bf7c9f8ee51f4d",
+      "dc5c648b61a53c9cc098e483d52dc07ae375ceeb"
     ],
     "review_count": 7,
     "topic": "Data Structures & Algorithms"
@@ -215,7 +217,8 @@
     "processed_submission_commits": [
       "891234c3dd751db06eecd028ac58a0db27162c2c",
       "51aa38303e1246e43939f746c94691ea043ce23d",
-      "9d5235723c47f656a109bf03e473f8e57df39d7e"
+      "9d5235723c47f656a109bf03e473f8e57df39d7e",
+      "62e5be50bcc55f1845af93dbf832dc1bde624ec3"
     ],
     "review_count": 3,
     "topic": "Data Structures & Algorithms"
@@ -248,7 +251,8 @@
     ],
     "processed_submission_commits": [
       "a06edde072a9efbbcbdb957a643d2070f3a628fa",
-      "2139db4f981a13cc0317203eb568c1bbdb07acd7"
+      "2139db4f981a13cc0317203eb568c1bbdb07acd7",
+      "5c37b8bf3a492cdf137caaa3bf97e0f653e2fd18"
     ],
     "review_count": 3,
     "topic": "Data Structures & Algorithms"
@@ -265,9 +269,23 @@
     ],
     "processed_submission_commits": [
       "3a01f69b3d5b110e68ee8505f29b0850edc491df",
-      "a9a396b89abdc9dfa4678e5aca83cc947c65bdfd"
+      "a9a396b89abdc9dfa4678e5aca83cc947c65bdfd",
+      "f170e1c0354ecd4163491ce167b3edde2745b967",
+      "b7bfe906fd4fc0a6496a7eb2e970fd71727b51d2"
     ],
     "review_count": 3,
+    "topic": "Data Structures & Algorithms"
+  },
+  "products-of-array-discluding-self": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": "2026-09-29",
+    "next_review": "2026-09-30",
+    "processed_submission_commits": [
+      "14bf7230d36004a4ca5a86ef835f7a722845f301"
+    ],
+    "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
   "rotting-fruit": {
