@@ -250,20 +250,21 @@
   },
   "network-delay-time": {
     "difficulty": "Medium",
-    "ease_factor": 1.9,
-    "interval": 1,
-    "last_review": "2026-09-29",
-    "next_review": "2026-09-30",
+    "ease_factor": 1.85,
+    "interval": 2,
+    "last_review": "2026-10-01",
+    "next_review": "2026-10-05",
     "processed_rating_comment_ids": [
       "5840895714",
-      "5897213242"
+      "5897213242",
+      "5940957623"
     ],
     "processed_submission_commits": [
       "a06edde072a9efbbcbdb957a643d2070f3a628fa",
       "2139db4f981a13cc0317203eb568c1bbdb07acd7",
       "5c37b8bf3a492cdf137caaa3bf97e0f653e2fd18"
     ],
-    "review_count": 3,
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "permutation-string": {
@@ -287,14 +288,17 @@
   },
   "products-of-array-discluding-self": {
     "difficulty": "Medium",
-    "ease_factor": 2.5,
-    "interval": 1,
-    "last_review": "2026-09-29",
-    "next_review": "2026-09-30",
+    "ease_factor": 2.65,
+    "interval": 3,
+    "last_review": "2026-10-01",
+    "next_review": "2026-10-05",
+    "processed_rating_comment_ids": [
+      "5940957623"
+    ],
     "processed_submission_commits": [
       "14bf7230d36004a4ca5a86ef835f7a722845f301"
     ],
-    "review_count": 0,
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "rotting-fruit": {
@@ -320,31 +324,35 @@
   },
   "set-zeroes-in-matrix": {
     "difficulty": "Medium",
-    "ease_factor": 2.25,
-    "interval": 2,
-    "last_review": "2026-09-28",
-    "next_review": "2026-09-30",
+    "ease_factor": 2.05,
+    "interval": 1,
+    "last_review": "2026-10-01",
+    "next_review": "2026-10-02",
     "processed_rating_comment_ids": [
-      "5879070120"
+      "5879070120",
+      "5940957623"
     ],
     "processed_submission_commits": [
       "97af33e9d665c92153d395faf7be0e113fc89ce5",
       "72d29cd1c5e5897621e5055acdcbe8f2988e6b4b",
       "fb3b62270312db40043a16705e981be727ad77ec"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "string-encode-and-decode": {
     "difficulty": "Medium",
-    "ease_factor": 2.5,
-    "interval": 1,
-    "last_review": "2026-09-29",
-    "next_review": "2026-09-30",
+    "ease_factor": 2.65,
+    "interval": 3,
+    "last_review": "2026-10-01",
+    "next_review": "2026-10-05",
+    "processed_rating_comment_ids": [
+      "5940957623"
+    ],
     "processed_submission_commits": [
       "2f2590db8e1d25f12f555861b691e0cb87d977ab"
     ],
-    "review_count": 0,
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "target-sum": {
@@ -390,18 +398,19 @@
   },
   "validate-parentheses": {
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 2,
-    "last_review": "2026-09-28",
-    "next_review": "2026-09-30",
+    "ease_factor": 2.6,
+    "interval": 5,
+    "last_review": "2026-10-01",
+    "next_review": "2026-10-06",
     "processed_rating_comment_ids": [
-      "5879070120"
+      "5879070120",
+      "5940957623"
     ],
     "processed_submission_commits": [
       "4903f63d763ab74938c8bd31b323923166e5fd7f",
       "701b0a2a60f34d52ebd775cb2077c2ef51c770c6"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   }
 }
