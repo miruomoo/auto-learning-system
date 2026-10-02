@@ -128,13 +128,15 @@ def _save_reviews(reviews: dict) -> None:
 
 
 def _load_config() -> dict:
-    defaults: dict = {"pause_until": None}
+    defaults: dict = {"pause_until": None, "weekend_enabled": False}
     if not _CONFIG_PATH.exists():
         return defaults
     try:
         with _CONFIG_PATH.open() as fh:
             data = json.load(fh)
-        return {**defaults, **data}
+        config = {**defaults, **data}
+        config["weekend_enabled"] = data.get("weekend_enabled") is True
+        return config
     except (json.JSONDecodeError, OSError):
         return defaults
 
@@ -244,6 +246,7 @@ def process_commands(
     reviews: dict,
     today: date,
     comment_id: int | None = None,
+    weekend_enabled: bool = False,
 ) -> tuple[list[dict], list[str]]:
     """
     Apply each command to *reviews* (mutated in place).
@@ -290,9 +293,11 @@ def process_commands(
             continue
 
         reviews[problem_id] = (
-            reset_entry(reviews[problem_id], today)
+            reset_entry(reviews[problem_id], today, weekend_enabled)
             if rating == "Reset"
-            else schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+            else schedule(  # type: ignore[arg-type]
+                reviews[problem_id], rating, today, weekend_enabled
+            )
         )
         entry = reviews[problem_id]
         if comment_marker is not None:
@@ -416,6 +421,7 @@ def main() -> None:
     required_problem_map = extract_required_problem_map(issue_body, problem_map)
 
     # 3. Load reviews, apply updates
+    config = _load_config()
     reviews = _load_reviews()
     results, errors = process_commands(
         commands,
@@ -423,6 +429,7 @@ def main() -> None:
         reviews,
         today,
         comment_id=args.comment_id,
+        weekend_enabled=config.get("weekend_enabled") is True,
     )
 
     # 4. Save updated reviews

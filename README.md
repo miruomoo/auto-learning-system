@@ -10,7 +10,7 @@ Solutions are stored in this repository organised by topic and problem ID. Two G
 
 ### 1. Daily LeetCode Review (`main.yml`)
 
-Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dispatch`).
+Runs automatically at **5:00 AM UTC every day**. A preflight check enables Monday–Friday runs by default and enables Saturday/Sunday runs only when weekend reviews are configured. Manual `workflow_dispatch` runs follow the same policy.
 
 1. **`scripts/review.py`** — consumes new submission commits and determines which problems are due, then updates `.leetcode-review/reviews.json`.
 2. **`scripts/issue_formatter.py`** — reads the synchronized metadata and formats the day's review set into a GitHub Issue body.
@@ -22,7 +22,7 @@ Runs automatically at **5:00 AM UTC on weekdays** (or manually via `workflow_dis
 
 `system_start_date` applies to individual submission events, not entire problems. A problem with older imported files begins tracking when its first `submission-N` file is committed on or after the cutoff. Eligible commits are consumed chronologically and their commit identities are stored in `processed_submission_commits`, so same-day submissions remain distinct and workflow reruns are idempotent.
 
-An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval, rolling Saturday or Sunday dates forward to Monday. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes, and each comment is applied at most once using its GitHub comment ID.
+An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval, applying the configured weekend policy. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes, and each comment is applied at most once using its GitHub comment ID.
 
 On the first run after upgrading, entries with established review progress keep their existing schedule, difficulty, and topic; currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
 
@@ -39,18 +39,20 @@ Triggered whenever a comment containing the word `review` is posted on an open i
 
 ```
 .leetcode-review/
+  config.json               ← review automation settings
   reviews.json              ← spaced-repetition state for all problems
 
 scripts/
   review.py                 ← selects problems due today & updates schedule
   issue_formatter.py        ← formats the daily review GitHub Issue body
   process_review_comment.py ← handles review feedback from issue comments
+  review_day_preflight.py   ← applies the UTC weekend workflow policy
   daily_issue_lifecycle.py  ← closes stale daily issues on empty days
   discovery.py              ← scans the repo for solution files
   scheduler.py              ← spaced-repetition scheduling logic
 
 .github/workflows/
-  main.yml                  ← daily review workflow (weekdays at 5 AM UTC)
+  main.yml                  ← daily review workflow (daily at 5 AM UTC)
   process-review-comment.yml← comment-triggered feedback workflow
 
 <topic-folder>/
@@ -59,6 +61,20 @@ scripts/
     submission-1.<ext>      ← second submission
     ...
 ```
+
+## Weekend reviews
+
+Weekend reviews are disabled by default. Add or update this setting in `.leetcode-review/config.json` to allow normal review issues and newly calculated due dates on Saturdays and Sundays:
+
+```json
+{
+  "weekend_enabled": true
+}
+```
+
+The workflow uses the current **UTC** day. A missing, `false`, or invalid `weekend_enabled` value preserves weekday-only behavior.
+
+Changing the setting does not rewrite existing review metadata. Enabling weekends affects only newly calculated dates, so dates already rolled to Monday stay on Monday. After disabling weekends, an existing Saturday or Sunday due date is treated as due on Monday without immediately changing the stored date.
 
 **Example solution paths:**
 ```

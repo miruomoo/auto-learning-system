@@ -41,12 +41,17 @@ def next_weekday(value: date) -> date:
     return value
 
 
-def review_date(start: date, interval: int) -> date:
-    """Return a review date that never falls on a weekend."""
-    return next_weekday(start + timedelta(days=interval))
+def _apply_weekend_policy(value: date, weekend_enabled: bool = False) -> date:
+    """Return *value* unchanged only when weekend reviews are explicitly enabled."""
+    return value if weekend_enabled is True else next_weekday(value)
 
 
-def new_entry(today: date | None = None) -> dict:
+def review_date(start: date, interval: int, weekend_enabled: bool = False) -> date:
+    """Return the calculated review date under the configured weekend policy."""
+    return _apply_weekend_policy(start + timedelta(days=interval), weekend_enabled)
+
+
+def new_entry(today: date | None = None, weekend_enabled: bool = False) -> dict:
     """Return the default metadata for a newly discovered problem."""
     if today is None:
         today = date.today()
@@ -54,14 +59,19 @@ def new_entry(today: date | None = None) -> dict:
         "difficulty": "Medium",
         "topic": "Unknown",
         "last_review": None,
-        "next_review": review_date(today, 1).isoformat(),
+        "next_review": review_date(today, 1, weekend_enabled).isoformat(),
         "interval": 1,
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
     }
 
 
-def schedule(entry: dict, rating: Rating, today: date | None = None) -> dict:
+def schedule(
+    entry: dict,
+    rating: Rating,
+    today: date | None = None,
+    weekend_enabled: bool = False,
+) -> dict:
     """
     Apply an SM-2 update to *entry* given a review *rating*.
 
@@ -87,12 +97,16 @@ def schedule(entry: dict, rating: Rating, today: date | None = None) -> dict:
     entry["ease_factor"] = round(ease, 4)
     entry["interval"] = interval
     entry["last_review"] = today.isoformat()
-    entry["next_review"] = review_date(today, interval).isoformat()
+    entry["next_review"] = review_date(today, interval, weekend_enabled).isoformat()
     entry["review_count"] = entry.get("review_count", 0) + 1
     return entry
 
 
-def reset_entry(entry: dict, today: date | None = None) -> dict:
+def reset_entry(
+    entry: dict,
+    today: date | None = None,
+    weekend_enabled: bool = False,
+) -> dict:
     """
     Reset *entry*'s spaced-repetition schedule back to its initial state.
 
@@ -106,7 +120,7 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
         "difficulty": entry.get("difficulty", "Medium"),
         "topic": entry.get("topic", "Unknown"),
         "last_review": None,
-        "next_review": review_date(today, 1).isoformat(),
+        "next_review": review_date(today, 1, weekend_enabled).isoformat(),
         "interval": 1,
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
@@ -117,23 +131,32 @@ def reset_entry(entry: dict, today: date | None = None) -> dict:
     return reset
 
 
-def is_due(entry: dict, today: date | None = None) -> bool:
+def is_due(
+    entry: dict,
+    today: date | None = None,
+    weekend_enabled: bool = False,
+) -> bool:
     """Return True when the problem is due for review on or before *today*."""
     if today is None:
         today = date.today()
     next_review = entry.get("next_review")
     if next_review is None:
         return True
-    return next_weekday(date.fromisoformat(next_review)) <= today
+    due_date = _apply_weekend_policy(date.fromisoformat(next_review), weekend_enabled)
+    return due_date <= today
 
 
-def days_overdue(entry: dict, today: date | None = None) -> int:
+def days_overdue(
+    entry: dict,
+    today: date | None = None,
+    weekend_enabled: bool = False,
+) -> int:
     """Return how many days overdue the problem is (0 if not overdue)."""
     if today is None:
         today = date.today()
     next_review = entry.get("next_review")
     if next_review is None:
         return 0
-    due_date = next_weekday(date.fromisoformat(next_review))
+    due_date = _apply_weekend_policy(date.fromisoformat(next_review), weekend_enabled)
     delta = (today - due_date).days
     return max(0, delta)
