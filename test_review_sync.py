@@ -207,6 +207,19 @@ class SubmissionSyncTests(unittest.TestCase):
 
 
 class FormatterAuthorityTests(unittest.TestCase):
+    def build_due_issue(self, problem_ids: list[str], limit: int) -> tuple[str, list]:
+        reviews = {
+            problem_id: untouched_entry(next_review="2026-09-22")
+            for problem_id in problem_ids
+        }
+        with (
+            patch.object(issue_formatter, "_load_reviews", return_value=reviews),
+            patch.object(
+                issue_formatter, "_load_config", return_value={"daily_show_limit": limit}
+            ),
+        ):
+            return issue_formatter.build_issue_body(date(2026, 9, 22))
+
     def test_formatter_does_not_recreate_excluded_entry(self):
         with (
             patch.object(issue_formatter, "_load_reviews", return_value={}),
@@ -247,6 +260,59 @@ class FormatterAuthorityTests(unittest.TestCase):
             body, shown = issue_formatter.build_issue_body(date(2026, 9, 22))
         self.assertEqual(len(shown), 1)
         self.assertIn('<!-- problem-map: {"1": "problem"} -->', body)
+        self.assertIn('<!-- required-problem-map: {"1": "problem"} -->', body)
+
+    def test_one_deferred_problem_is_numbered_and_mapped_but_not_returned(self):
+        problem_ids = [f"problem-{number}" for number in range(1, 7)]
+
+        body, shown = self.build_due_issue(problem_ids, limit=5)
+
+        deferred_section = body.split("### ⏭️ Deferred to Tomorrow", 1)[1]
+        self.assertIn("6. 🔴 **Problem 6**", deferred_section)
+        self.assertIn("`review 6 easy`", deferred_section)
+        self.assertIn(
+            '<!-- problem-map: {"1": "problem-1", "2": "problem-2", '
+            '"3": "problem-3", "4": "problem-4", "5": "problem-5", '
+            '"6": "problem-6"} -->',
+            body,
+        )
+        self.assertIn(
+            '<!-- required-problem-map: {"1": "problem-1", "2": "problem-2", '
+            '"3": "problem-3", "4": "problem-4", "5": "problem-5"} -->',
+            body,
+        )
+        self.assertEqual([problem_id for problem_id, _ in shown], problem_ids[:5])
+
+    def test_multiple_deferred_problems_keep_sorted_order_and_continuous_numbers(self):
+        problem_ids = [
+            "hard-one",
+            "hard-two",
+            "hard-three",
+            "hard-four",
+            "hard-five",
+            "hard-six",
+        ]
+
+        body, shown = self.build_due_issue(problem_ids, limit=3)
+
+        deferred_section = body.split("### ⏭️ Deferred to Tomorrow", 1)[1]
+        for number, problem_id in enumerate(problem_ids[3:], start=4):
+            self.assertIn(
+                f"{number}. 🔴 **{problem_id.replace('-', ' ').title()}**",
+                deferred_section,
+            )
+        self.assertEqual(
+            prc.extract_problem_map(body),
+            {str(number): problem_id for number, problem_id in enumerate(problem_ids, 1)},
+        )
+        self.assertEqual(
+            prc.extract_required_problem_map(body, prc.extract_problem_map(body)),
+            {
+                str(number): problem_id
+                for number, problem_id in enumerate(problem_ids[:3], 1)
+            },
+        )
+        self.assertEqual([problem_id for problem_id, _ in shown], problem_ids[:3])
 
     def test_cli_writes_machine_readable_has_reviews_output(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -523,6 +589,71 @@ class SchedulerAndCommentTests(unittest.TestCase):
         self.assertEqual([result["rating"] for result in results], ["Reset", "Remove"])
         self.assertEqual(reviews["reset-me"]["review_count"], 0)
         self.assertNotIn("remove-me", reviews)
+
+    def test_deferred_rating_uses_full_problem_map(self):
+        reviews = {"deferred-problem": untouched_entry()}
+
+        results, errors = prc.process_commands(
+            [(6, "Easy")],
+            {"6": "deferred-problem"},
+            reviews,
+            date(2026, 9, 22),
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["num"], 6)
+        self.assertEqual(results[0]["name"], "Deferred Problem")
+        self.assertEqual(reviews["deferred-problem"]["review_count"], 1)
+
+    def test_deferred_reset_uses_full_problem_map(self):
+        reviews = {"deferred-problem": untouched_entry(review_count=2)}
+
+        results, errors = prc.process_commands(
+            [(6, "Reset")],
+            {"6": "deferred-problem"},
+            reviews,
+            date(2026, 9, 22),
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results[0]["num"], 6)
+        self.assertEqual(results[0]["rating"], "Reset")
+        self.assertEqual(reviews["deferred-problem"]["review_count"], 0)
+
+    def test_deferred_problem_is_not_required_for_completion(self):
+        today = date(2026, 9, 22)
+        reviews = {
+            "primary": untouched_entry(last_review=today.isoformat()),
+            "deferred": untouched_entry(),
+        }
+
+        self.assertTrue(
+            prc.all_required_problems_reviewed(reviews, {"1": "primary"}, today)
+        )
+
+    def test_primary_problem_remains_required_for_completion(self):
+        today = date(2026, 9, 22)
+        reviews = {
+            "primary": untouched_entry(),
+            "deferred": untouched_entry(last_review=today.isoformat()),
+        }
+
+        self.assertFalse(
+            prc.all_required_problems_reviewed(reviews, {"1": "primary"}, today)
+        )
+
+    def test_older_issue_uses_full_problem_map_for_completion(self):
+        problem_map = {"1": "first", "2": "second"}
+        issue_body = '<!-- problem-map: {"1": "first", "2": "second"} -->'
+        required_map = prc.extract_required_problem_map(issue_body, problem_map)
+        today = date(2026, 9, 22)
+        reviews = {
+            "first": untouched_entry(last_review=today.isoformat()),
+            "second": untouched_entry(),
+        }
+
+        self.assertEqual(required_map, problem_map)
+        self.assertFalse(prc.all_required_problems_reviewed(reviews, required_map, today))
 
 
 if __name__ == "__main__":
