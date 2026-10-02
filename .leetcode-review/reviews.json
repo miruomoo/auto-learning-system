@@ -306,13 +306,14 @@
   },
   "rotting-fruit": {
     "difficulty": "Medium",
-    "ease_factor": 2.25,
-    "interval": 2,
-    "last_review": "2026-09-30",
-    "next_review": "2026-10-02",
+    "ease_factor": 2.4,
+    "interval": 5,
+    "last_review": "2026-10-02",
+    "next_review": "2026-10-07",
     "processed_rating_comment_ids": [
       "5840895714",
-      "5918515022"
+      "5918515022",
+      "5958405828"
     ],
     "processed_submission_commits": [
       "43303d6a6e00c49b61d97cd19b887dc334e0aa90",
@@ -322,18 +323,19 @@
       "9841dc749a90da933cbc1eb0f0e00dede8081cae",
       "5d58eb9d9138fb47408222345dfb1fe0c7ff8a97"
     ],
-    "review_count": 3,
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "set-zeroes-in-matrix": {
     "difficulty": "Medium",
-    "ease_factor": 2.05,
-    "interval": 1,
-    "last_review": "2026-10-01",
-    "next_review": "2026-10-02",
+    "ease_factor": 2.2,
+    "interval": 2,
+    "last_review": "2026-10-02",
+    "next_review": "2026-10-04",
     "processed_rating_comment_ids": [
       "5879070120",
-      "5940957623"
+      "5940957623",
+      "5958405828"
     ],
     "processed_submission_commits": [
       "97af33e9d665c92153d395faf7be0e113fc89ce5",
@@ -341,7 +343,7 @@
       "fb3b62270312db40043a16705e981be727ad77ec",
       "e4bc5211f1585c7314ef62661332c21a053ec378"
     ],
-    "review_count": 3,
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "string-encode-and-decode": {
@@ -407,14 +409,17 @@
   },
   "valid-sudoku": {
     "difficulty": "Medium",
-    "ease_factor": 2.5,
-    "interval": 1,
-    "last_review": "2026-09-30",
-    "next_review": "2026-10-01",
+    "ease_factor": 2.65,
+    "interval": 3,
+    "last_review": "2026-10-02",
+    "next_review": "2026-10-05",
+    "processed_rating_comment_ids": [
+      "5958405828"
+    ],
     "processed_submission_commits": [
       "20ad0be80df163d11c05b9837467516ecb4eed87"
     ],
-    "review_count": 0,
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "validate-parentheses": {
