@@ -95,7 +95,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     """
     Build the Markdown body for the daily review issue.
 
-    Returns (body_str, due_items) where due_items is the ordered list of
+    Returns (body_str, shown_items) where shown_items is the ordered list of
     (problem_id, entry) pairs shown in the issue.
     """
     if today is None:
@@ -130,6 +130,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     problem_lines: list[str] = []
     # mapping: 1-based number -> problem_id (stored as JSON in the issue)
     problem_map: dict[str, str] = {}
+    required_problem_map: dict[str, str] = {}
 
     for idx, (problem_id, entry) in enumerate(shown_items, start=1):
         diff = entry.get("difficulty", "Unknown")
@@ -138,6 +139,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
         due_str = _due_label(entry, today)
         name = _display_name(problem_id)
         problem_map[str(idx)] = problem_id
+        required_problem_map[str(idx)] = problem_id
         problem_lines.append(
             f"{idx}. {emoji} **{name}**\n"
             f"   - Difficulty: {diff}\n"
@@ -146,9 +148,6 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
         )
 
     problems_section = "\n\n".join(problem_lines)
-
-    # Hidden JSON block for the comment parser
-    map_json = json.dumps(problem_map)
 
     # Summary line: how many shown vs total due
     total_due = len(due_items)
@@ -164,20 +163,37 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
 
     # Optional deferred section
     if deferred_items:
-        deferred_lines = [
-            f"- {_display_name(pid)} "
-            f"({entry.get('difficulty', 'Unknown')}, "
-            f"{_due_label(entry, today)})"
-            for pid, entry in deferred_items
-        ]
+        deferred_lines: list[str] = []
+        first_deferred_number = len(shown_items) + 1
+        for idx, (problem_id, entry) in enumerate(
+            deferred_items, start=first_deferred_number
+        ):
+            diff = entry.get("difficulty", "Unknown")
+            topic = entry.get("topic", "Unknown")
+            emoji = _DIFFICULTY_EMOJI.get(diff, "⚪")
+            due_str = _due_label(entry, today)
+            name = _display_name(problem_id)
+            problem_map[str(idx)] = problem_id
+            deferred_lines.append(
+                f"{idx}. {emoji} **{name}**\n"
+                f"   - Difficulty: {diff}\n"
+                f"   - Topic: {topic}\n"
+                f"   - Due: {due_str}"
+            )
         deferred_section = (
             "\n\n---\n\n"
             "### ⏭️ Deferred to Tomorrow\n\n"
-            "These problems are also due but will be shown in the next daily issue:\n\n"
-            + "\n".join(deferred_lines)
+            "These problems are also due and will appear in the next daily issue. "
+            "They are optional, but you can review one now using its displayed number, "
+            f"e.g. `review {first_deferred_number} easy`.\n\n"
+            + "\n\n".join(deferred_lines)
         )
     else:
         deferred_section = ""
+
+    # Hidden JSON blocks for command resolution and required completion tracking
+    map_json = json.dumps(problem_map)
+    required_map_json = json.dumps(required_problem_map)
 
     body = f"""## 📚 Today's LeetCode Reviews — {today.isoformat()}
 
@@ -224,7 +240,8 @@ pause <days>
 
 ---
 
-<!-- problem-map: {map_json} -->"""
+<!-- problem-map: {map_json} -->
+<!-- required-problem-map: {required_map_json} -->"""
 
     return body, shown_items
 

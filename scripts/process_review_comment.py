@@ -54,6 +54,9 @@ _PAUSE_RE = re.compile(
 
 # Regex to extract the problem-map JSON hidden in the issue body
 _MAP_RE = re.compile(r"<!--\s*problem-map:\s*(\{.*?\})\s*-->", re.DOTALL)
+_REQUIRED_MAP_RE = re.compile(
+    r"<!--\s*required-problem-map:\s*(\{.*?\})\s*-->", re.DOTALL
+)
 
 _VALID_RESULTS = {"easy", "medium", "forgot", "reset", "remove"}
 _RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot", "reset": "Reset", "remove": "Remove"}
@@ -185,6 +188,29 @@ def extract_problem_map(issue_body: str) -> dict[str, str]:
         return json.loads(m.group(1))
     except json.JSONDecodeError:
         return {}
+
+
+def extract_required_problem_map(
+    issue_body: str, problem_map: dict[str, str]
+) -> dict[str, str]:
+    """Extract required problems, falling back to the full map for older issues."""
+    m = _REQUIRED_MAP_RE.search(issue_body)
+    if not m:
+        return problem_map
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return problem_map
+
+
+def all_required_problems_reviewed(
+    reviews: dict, required_problem_map: dict[str, str], today: date
+) -> bool:
+    """Return whether every required problem was reviewed on *today*."""
+    return all(
+        reviews.get(problem_id, {}).get("last_review") == today.isoformat()
+        for problem_id in required_problem_map.values()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +413,7 @@ def main() -> None:
     if not problem_map:
         print("Could not find problem map in issue body. Skipping.", file=sys.stderr)
         sys.exit(1)
+    required_problem_map = extract_required_problem_map(issue_body, problem_map)
 
     # 3. Load reviews, apply updates
     reviews = _load_reviews()
@@ -414,14 +441,7 @@ def main() -> None:
         sys.exit(1)
 
     # 6. Signal whether all problems have been reviewed today
-    reviewed_today = set()
-    for problem_id in problem_map.values():
-        entry = reviews.get(problem_id, {})
-        last = entry.get("last_review")
-        if last == today.isoformat():
-            reviewed_today.add(problem_id)
-
-    all_done = reviewed_today >= set(problem_map.values())
+    all_done = all_required_problems_reviewed(reviews, required_problem_map, today)
 
     # Write to GITHUB_OUTPUT so the workflow can act on it
     github_output = os.environ.get("GITHUB_OUTPUT", "")
