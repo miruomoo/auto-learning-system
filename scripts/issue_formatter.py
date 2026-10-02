@@ -49,13 +49,19 @@ _CONFIG_PATH = _REPO_ROOT / ".leetcode-review" / "config.json"
 
 
 def _load_config() -> dict:
-    defaults = {"daily_show_limit": 3, "pause_until": None}
+    defaults = {
+        "daily_show_limit": 3,
+        "pause_until": None,
+        "weekend_enabled": False,
+    }
     if not _CONFIG_PATH.exists():
         return defaults
     try:
         with _CONFIG_PATH.open() as fh:
             data = json.load(fh)
-        return {**defaults, **data}
+        config = {**defaults, **data}
+        config["weekend_enabled"] = data.get("weekend_enabled") is True
+        return config
     except (json.JSONDecodeError, OSError):
         return defaults
 
@@ -71,10 +77,14 @@ def _is_paused(config: dict, today: date) -> bool:
         return False
 
 
-def _sort_key(item: tuple[str, dict], today: date):
+def _sort_key(
+    item: tuple[str, dict],
+    today: date,
+    weekend_enabled: bool = False,
+):
     problem_id, entry = item
     diff_rank = _DIFFICULTY_ORDER.get(entry.get("difficulty", "Unknown"), 3)
-    overdue = days_overdue(entry, today)
+    overdue = days_overdue(entry, today, weekend_enabled)
     ease = entry.get("ease_factor", 2.5)
     last = entry.get("last_review") or "0000-00-00"
     return (diff_rank, -overdue, ease, last)
@@ -84,8 +94,12 @@ def _display_name(problem_id: str) -> str:
     return problem_id.replace("-", " ").title()
 
 
-def _due_label(entry: dict, today: date) -> str:
-    overdue = days_overdue(entry, today)
+def _due_label(
+    entry: dict,
+    today: date,
+    weekend_enabled: bool = False,
+) -> str:
+    overdue = days_overdue(entry, today, weekend_enabled)
     if overdue == 0:
         return "Today"
     return f"{overdue} day{'s' if overdue != 1 else ''} overdue"
@@ -102,6 +116,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
         today = date.today()
 
     config = _load_config()
+    weekend_enabled = config.get("weekend_enabled") is True
     if _is_paused(config, today):
         pause_until = config["pause_until"]
         body = (
@@ -112,8 +127,12 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
 
     reviews = _load_reviews()
 
-    due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
-    due_items.sort(key=lambda x: _sort_key(x, today))
+    due_items = [
+        (pid, entry)
+        for pid, entry in reviews.items()
+        if is_due(entry, today, weekend_enabled)
+    ]
+    due_items.sort(key=lambda x: _sort_key(x, today, weekend_enabled))
 
     max_daily = max(1, int(config["daily_show_limit"]))
     shown_items = due_items[:max_daily]
@@ -136,7 +155,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
         diff = entry.get("difficulty", "Unknown")
         topic = entry.get("topic", "Unknown")
         emoji = _DIFFICULTY_EMOJI.get(diff, "⚪")
-        due_str = _due_label(entry, today)
+        due_str = _due_label(entry, today, weekend_enabled)
         name = _display_name(problem_id)
         problem_map[str(idx)] = problem_id
         required_problem_map[str(idx)] = problem_id
@@ -171,7 +190,7 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
             diff = entry.get("difficulty", "Unknown")
             topic = entry.get("topic", "Unknown")
             emoji = _DIFFICULTY_EMOJI.get(diff, "⚪")
-            due_str = _due_label(entry, today)
+            due_str = _due_label(entry, today, weekend_enabled)
             name = _display_name(problem_id)
             problem_map[str(idx)] = problem_id
             deferred_lines.append(

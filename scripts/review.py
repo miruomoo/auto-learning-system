@@ -74,13 +74,16 @@ def _load_config() -> dict:
         "auto_forgot_after_days": 14,
         "daily_show_limit": 3,
         "pause_until": None,
+        "weekend_enabled": False,
     }
     if not _CONFIG_PATH.exists():
         return defaults
     try:
         with _CONFIG_PATH.open() as fh:
             data = json.load(fh)
-        return {**defaults, **data}
+        config = {**defaults, **data}
+        config["weekend_enabled"] = data.get("weekend_enabled") is True
+        return config
     except (json.JSONDecodeError, OSError):
         return defaults
 
@@ -182,12 +185,18 @@ def _has_established_schedule(entry: dict) -> bool:
     )
 
 
-def _record_submission(entry: dict, event: SubmissionEvent) -> None:
+def _record_submission(
+    entry: dict,
+    event: SubmissionEvent,
+    weekend_enabled: bool = False,
+) -> None:
     """Record a completion without applying an SM-2 rating."""
     submission_date = event.submission_date
     interval = entry.get("interval", 1)
     entry["last_review"] = submission_date.isoformat()
-    entry["next_review"] = review_date(submission_date, interval).isoformat()
+    entry["next_review"] = review_date(
+        submission_date, interval, weekend_enabled
+    ).isoformat()
     entry.setdefault("processed_submission_commits", []).append(event.commit)
 
 
@@ -202,6 +211,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
     Returns (updated_reviews, list_of_new_problem_ids, list_of_completed_problem_ids).
     """
     config = _load_config()
+    weekend_enabled = config.get("weekend_enabled") is True
     system_start_date: date | None = None
     if config.get("system_start_date"):
         try:
@@ -231,7 +241,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
         if existing is None:
             if not eligible_events:
                 continue
-            existing = new_entry(eligible_events[0].submission_date)
+            existing = new_entry(eligible_events[0].submission_date, weekend_enabled)
             existing["difficulty"] = meta["difficulty"]
             existing["topic"] = meta["topic"]
             existing["processed_submission_commits"] = []
@@ -266,7 +276,7 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
         processed = set(existing["processed_submission_commits"])
         unprocessed_events = [event for event in eligible_events if event.commit not in processed]
         for event in unprocessed_events:
-            _record_submission(existing, event)
+            _record_submission(existing, event, weekend_enabled)
         if unprocessed_events:
             completed_ids.append(problem_id)
 
@@ -289,10 +299,14 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
 _DIFFICULTY_ORDER = {"Hard": 0, "Medium": 1, "Easy": 2, "Unknown": 3}
 
 
-def _sort_key(item: tuple[str, dict], today: date):
+def _sort_key(
+    item: tuple[str, dict],
+    today: date,
+    weekend_enabled: bool = False,
+):
     problem_id, entry = item
     diff_rank = _DIFFICULTY_ORDER.get(entry.get("difficulty", "Unknown"), 3)
-    overdue = days_overdue(entry, today)
+    overdue = days_overdue(entry, today, weekend_enabled)
     ease = entry.get("ease_factor", 2.5)
     last = entry.get("last_review") or "0000-00-00"
     # Sort: diff ASC, overdue DESC (negate), ease ASC, last ASC
@@ -306,7 +320,11 @@ def _sort_key(item: tuple[str, dict], today: date):
 _DIFFICULTY_EMOJI = {"Hard": "🔴", "Medium": "🟡", "Easy": "🟢"}
 
 
-def _build_report(due_items: list[tuple[str, dict]], today: date) -> str:
+def _build_report(
+    due_items: list[tuple[str, dict]],
+    today: date,
+    weekend_enabled: bool = False,
+) -> str:
     if not due_items:
         return "✅ No reviews scheduled for today."
 
@@ -319,7 +337,7 @@ def _build_report(due_items: list[tuple[str, dict]], today: date) -> str:
     for problem_id, entry in due_items:
         diff = entry.get("difficulty", "Unknown")
         topic = entry.get("topic", "Unknown")
-        overdue = days_overdue(entry, today)
+        overdue = days_overdue(entry, today, weekend_enabled)
         emoji = _DIFFICULTY_EMOJI.get(diff, "⚪")
         overdue_str = f"+{overdue}d" if overdue > 0 else "today"
         lines.append(f"{emoji} {problem_id:<43} {topic:<30} {diff:<8} {overdue_str:>7}")
@@ -337,6 +355,7 @@ def run_daily(today: date | None = None) -> None:
         today = date.today()
 
     config = _load_config()
+    weekend_enabled = config.get("weekend_enabled") is True
 
     if is_paused(config, today):
         pause_until = config["pause_until"]
@@ -352,8 +371,10 @@ def run_daily(today: date | None = None) -> None:
     # automatically so the queue doesn't grow without bound.
     auto_forgot_ids: list[str] = []
     for problem_id, entry in reviews.items():
-        if days_overdue(entry, today) > auto_forgot_after_days:
-            reviews[problem_id] = schedule(entry, "Forgot", today)
+        if days_overdue(entry, today, weekend_enabled) > auto_forgot_after_days:
+            reviews[problem_id] = schedule(
+                entry, "Forgot", today, weekend_enabled
+            )
             auto_forgot_ids.append(problem_id)
 
     _save_reviews(reviews)
@@ -371,22 +392,30 @@ def run_daily(today: date | None = None) -> None:
             f"(overdue > {auto_forgot_after_days} days): {', '.join(sorted(auto_forgot_ids))}\n"
         )
 
-    due_items = [(pid, entry) for pid, entry in reviews.items() if is_due(entry, today)]
-    due_items.sort(key=lambda x: _sort_key(x, today))
+    due_items = [
+        (pid, entry)
+        for pid, entry in reviews.items()
+        if is_due(entry, today, weekend_enabled)
+    ]
+    due_items.sort(key=lambda x: _sort_key(x, today, weekend_enabled))
 
-    print(_build_report(due_items, today))
+    print(_build_report(due_items, today, weekend_enabled))
 
 
 def run_rate(problem_id: str, rating: str, today: date | None = None) -> None:
     if today is None:
         today = date.today()
 
+    config = _load_config()
+    weekend_enabled = config.get("weekend_enabled") is True
     reviews = _load_reviews()
     if problem_id not in reviews:
         print(f"❌ Unknown problem: {problem_id}", file=sys.stderr)
         sys.exit(1)
 
-    reviews[problem_id] = schedule(reviews[problem_id], rating, today)  # type: ignore[arg-type]
+    reviews[problem_id] = schedule(
+        reviews[problem_id], rating, today, weekend_enabled  # type: ignore[arg-type]
+    )
     _save_reviews(reviews)
 
     entry = reviews[problem_id]

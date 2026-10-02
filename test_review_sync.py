@@ -13,6 +13,7 @@ import daily_issue_lifecycle
 import issue_formatter
 import process_review_comment as prc
 import review
+import review_day_preflight
 import scheduler
 
 
@@ -21,6 +22,7 @@ CONFIG = {
     "auto_forgot_after_days": 14,
     "daily_show_limit": 3,
     "pause_until": None,
+    "weekend_enabled": False,
 }
 META = {"topic": "Data Structures & Algorithms", "difficulty": "Hard"}
 
@@ -176,6 +178,23 @@ class SubmissionSyncTests(unittest.TestCase):
         self.assertEqual(result["ease_factor"], 2.8)
         self.assertEqual(result["review_count"], 5)
 
+    def test_submission_scheduling_uses_weekend_setting(self):
+        event = submission("weekend", "2026-10-02T12:00:00+00:00")
+        with (
+            patch.object(review, "discover_problems", return_value={"problem": META}),
+            patch.object(review, "_submission_events", return_value=[event]),
+            patch.object(
+                review,
+                "_load_config",
+                return_value={**CONFIG, "weekend_enabled": True},
+            ),
+        ):
+            updated, _, _ = review.sync_new_problems(
+                {}, Path("/repo"), date(2026, 10, 2)
+            )
+
+        self.assertEqual(updated["problem"]["next_review"], "2026-10-03")
+
     def test_git_history_failure_leaves_metadata_unchanged(self):
         entry = untouched_entry()
         original = dict(entry)
@@ -261,6 +280,50 @@ class FormatterAuthorityTests(unittest.TestCase):
         self.assertEqual(len(shown), 1)
         self.assertIn('<!-- problem-map: {"1": "problem"} -->', body)
         self.assertIn('<!-- required-problem-map: {"1": "problem"} -->', body)
+
+    def test_formatter_includes_weekend_due_items_only_when_enabled(self):
+        saturday = date(2026, 10, 3)
+        reviews = {"problem": untouched_entry(next_review="2026-10-03")}
+
+        for weekend_enabled, expected_count in ((False, 0), (True, 1)):
+            with self.subTest(weekend_enabled=weekend_enabled):
+                with (
+                    patch.object(issue_formatter, "_load_reviews", return_value=reviews),
+                    patch.object(
+                        issue_formatter,
+                        "_load_config",
+                        return_value={
+                            "daily_show_limit": 3,
+                            "pause_until": None,
+                            "weekend_enabled": weekend_enabled,
+                        },
+                    ),
+                ):
+                    _, shown = issue_formatter.build_issue_body(saturday)
+                self.assertEqual(len(shown), expected_count)
+
+    def test_formatter_sorts_and_labels_weekend_overdue_items(self):
+        reviews = {
+            "saturday": untouched_entry(next_review="2026-10-03"),
+            "sunday": untouched_entry(next_review="2026-10-04"),
+        }
+        with (
+            patch.object(issue_formatter, "_load_reviews", return_value=reviews),
+            patch.object(
+                issue_formatter,
+                "_load_config",
+                return_value={
+                    "daily_show_limit": 3,
+                    "pause_until": None,
+                    "weekend_enabled": True,
+                },
+            ),
+        ):
+            body, shown = issue_formatter.build_issue_body(date(2026, 10, 4))
+
+        self.assertEqual([problem_id for problem_id, _ in shown], ["saturday", "sunday"])
+        self.assertIn("Due: 1 day overdue", body)
+        self.assertIn("Due: Today", body)
 
     def test_one_deferred_problem_is_numbered_and_mapped_but_not_returned(self):
         problem_ids = [f"problem-{number}" for number in range(1, 7)]
@@ -439,6 +502,64 @@ class DailyIssueLifecycleTests(unittest.TestCase):
         self.assertEqual(len(close_calls), 1)
 
 
+class WeekendConfigAndPreflightTests(unittest.TestCase):
+    def test_missing_weekend_setting_defaults_to_false_everywhere(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text('{"daily_show_limit": 3, "pause_until": null}')
+
+            for module in (review, issue_formatter, prc):
+                with self.subTest(module=module.__name__):
+                    with patch.object(module, "_CONFIG_PATH", config_path):
+                        self.assertFalse(module._load_config()["weekend_enabled"])
+
+            self.assertFalse(review_day_preflight.load_weekend_enabled(config_path))
+
+    def test_invalid_weekend_setting_defaults_to_false(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text('{"weekend_enabled": "true"}')
+
+            with patch.object(review, "_CONFIG_PATH", config_path):
+                self.assertFalse(review._load_config()["weekend_enabled"])
+            self.assertFalse(review_day_preflight.load_weekend_enabled(config_path))
+            self.assertEqual(
+                scheduler.review_date(date(2026, 10, 2), 1, "true"),  # type: ignore[arg-type]
+                date(2026, 10, 5),
+            )
+
+    def test_preflight_runs_weekdays_and_obeys_weekend_setting(self):
+        friday = date(2026, 10, 2)
+        saturday = date(2026, 10, 3)
+        sunday = date(2026, 10, 4)
+
+        self.assertTrue(review_day_preflight.should_run(friday))
+        self.assertFalse(review_day_preflight.should_run(saturday, False))
+        self.assertFalse(review_day_preflight.should_run(sunday, False))
+        self.assertTrue(review_day_preflight.should_run(saturday, True))
+        self.assertTrue(review_day_preflight.should_run(sunday, True))
+
+    def test_workflow_gates_review_and_issue_steps_on_preflight(self):
+        workflow = (
+            Path(__file__).parent / ".github" / "workflows" / "main.yml"
+        ).read_text()
+        self.assertIn('- cron: "0 5 * * *"', workflow)
+        for step_name in (
+            "Run review script",
+            "Format daily review issue",
+            "Create or update daily review issue",
+            "Close older daily issues on an empty day",
+            "Commit updated review metadata",
+        ):
+            with self.subTest(step=step_name):
+                section = workflow.split(f"- name: {step_name}", 1)[1].split(
+                    "\n      - name:", 1
+                )[0]
+                self.assertIn(
+                    "if: steps.preflight.outputs.should_run == 'true'", section
+                )
+
+
 class DailyReviewTests(unittest.TestCase):
     def test_auto_forgot_is_idempotent(self):
         today = date(2026, 8, 6)
@@ -466,6 +587,52 @@ class DailyReviewTests(unittest.TestCase):
         self.assertEqual(reviews["problem"]["review_count"], 3)
         self.assertEqual(reviews["problem"]["next_review"], "2026-08-07")
 
+    def test_auto_forgot_scheduling_uses_weekend_setting(self):
+        today = date(2026, 10, 2)
+        for weekend_enabled, expected in ((False, "2026-10-05"), (True, "2026-10-03")):
+            with self.subTest(weekend_enabled=weekend_enabled):
+                reviews = {
+                    "problem": untouched_entry(
+                        last_review="2026-09-01",
+                        next_review="2026-09-02",
+                        processed_submission_commits=[],
+                    )
+                }
+                config = {
+                    **CONFIG,
+                    "auto_forgot_after_days": 0,
+                    "system_start_date": None,
+                    "weekend_enabled": weekend_enabled,
+                }
+                with (
+                    patch.object(review, "_load_config", return_value=config),
+                    patch.object(review, "_load_reviews", return_value=reviews),
+                    patch.object(
+                        review,
+                        "sync_new_problems",
+                        return_value=(reviews, [], []),
+                    ),
+                    patch.object(review, "_save_reviews"),
+                ):
+                    review.run_daily(today)
+
+                self.assertEqual(reviews["problem"]["next_review"], expected)
+
+    def test_rate_command_uses_weekend_setting(self):
+        reviews = {"problem": untouched_entry(interval=1)}
+        with (
+            patch.object(
+                review,
+                "_load_config",
+                return_value={**CONFIG, "weekend_enabled": True},
+            ),
+            patch.object(review, "_load_reviews", return_value=reviews),
+            patch.object(review, "_save_reviews"),
+        ):
+            review.run_rate("problem", "Forgot", date(2026, 10, 2))
+
+        self.assertEqual(reviews["problem"]["next_review"], "2026-10-03")
+
     def test_run_daily_skips_when_paused(self):
         config = {**CONFIG, "pause_until": "2026-08-20"}
         with (
@@ -475,11 +642,27 @@ class DailyReviewTests(unittest.TestCase):
             review.run_daily(date(2026, 8, 18))
         load.assert_not_called()
 
+    def test_pause_takes_precedence_on_enabled_weekend(self):
+        saturday = date(2026, 10, 3)
+        config = {
+            **CONFIG,
+            "pause_until": saturday.isoformat(),
+            "weekend_enabled": True,
+        }
+        self.assertTrue(review_day_preflight.should_run(saturday, True))
+        with (
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "_load_reviews") as load,
+        ):
+            review.run_daily(saturday)
+        load.assert_not_called()
+
     def test_load_config_missing_file_returns_defaults(self):
         with patch.object(review, "_CONFIG_PATH", Path("/nonexistent/config.json")):
             config = review._load_config()
         self.assertIsNone(config["system_start_date"])
         self.assertEqual(config["daily_show_limit"], 3)
+        self.assertFalse(config["weekend_enabled"])
 
 
 class SchedulerAndCommentTests(unittest.TestCase):
@@ -492,6 +675,71 @@ class SchedulerAndCommentTests(unittest.TestCase):
         for start, interval, expected in cases:
             with self.subTest(start=start):
                 self.assertEqual(scheduler.review_date(start, interval), expected)
+
+    def test_enabled_review_dates_preserve_saturday_and_sunday(self):
+        cases = [
+            (date(2026, 10, 2), 1, date(2026, 10, 3)),
+            (date(2026, 10, 2), 2, date(2026, 10, 4)),
+        ]
+        for start, interval, expected in cases:
+            with self.subTest(interval=interval):
+                self.assertEqual(
+                    scheduler.review_date(start, interval, True),
+                    expected,
+                )
+
+    def test_new_ratings_and_reset_use_enabled_weekends(self):
+        self.assertEqual(
+            scheduler.new_entry(date(2026, 10, 2), True)["next_review"],
+            "2026-10-03",
+        )
+        rating_cases = [
+            ("Easy", date(2026, 9, 30), "2026-10-03"),
+            ("Medium", date(2026, 10, 2), "2026-10-04"),
+            ("Forgot", date(2026, 10, 2), "2026-10-03"),
+        ]
+        for rating, today, expected in rating_cases:
+            with self.subTest(rating=rating):
+                result = scheduler.schedule(
+                    untouched_entry(interval=1),
+                    rating,
+                    today,
+                    True,
+                )
+                self.assertEqual(result["next_review"], expected)
+
+        reset = scheduler.reset_entry(
+            untouched_entry(review_count=2),
+            date(2026, 10, 2),
+            True,
+        )
+        self.assertEqual(reset["next_review"], "2026-10-03")
+
+    def test_due_and_overdue_calculations_respect_weekend_setting(self):
+        saturday_entry = untouched_entry(next_review="2026-10-03")
+        sunday_entry = untouched_entry(next_review="2026-10-04")
+
+        self.assertFalse(
+            scheduler.is_due(saturday_entry, date(2026, 10, 3), False)
+        )
+        self.assertTrue(
+            scheduler.is_due(saturday_entry, date(2026, 10, 3), True)
+        )
+        self.assertFalse(
+            scheduler.is_due(sunday_entry, date(2026, 10, 4), False)
+        )
+        self.assertTrue(
+            scheduler.is_due(sunday_entry, date(2026, 10, 4), True)
+        )
+        self.assertEqual(
+            scheduler.days_overdue(saturday_entry, date(2026, 10, 5), False),
+            0,
+        )
+        self.assertEqual(
+            scheduler.days_overdue(saturday_entry, date(2026, 10, 5), True),
+            2,
+        )
+        self.assertEqual(saturday_entry["next_review"], "2026-10-03")
 
     def test_stored_weekend_dates_are_due_not_overdue_on_monday(self):
         monday = date(2026, 9, 28)
@@ -573,6 +821,28 @@ class SchedulerAndCommentTests(unittest.TestCase):
         self.assertEqual(repeated_results, [])
         self.assertEqual(repeated_errors, [])
         self.assertEqual(reviews["problem"]["review_count"], 1)
+
+    def test_comment_ratings_and_reset_use_weekend_setting(self):
+        reviews = {
+            "easy": untouched_entry(interval=3),
+            "medium": untouched_entry(interval=1),
+            "forgot": untouched_entry(interval=1),
+            "reset": untouched_entry(interval=1, review_count=2),
+        }
+        results, errors = prc.process_commands(
+            [(1, "Easy"), (2, "Medium"), (3, "Forgot"), (4, "Reset")],
+            {"1": "easy", "2": "medium", "3": "forgot", "4": "reset"},
+            reviews,
+            date(2026, 10, 2),
+            weekend_enabled=True,
+        )
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 4)
+        self.assertEqual(reviews["easy"]["next_review"], "2026-10-10")
+        self.assertEqual(reviews["medium"]["next_review"], "2026-10-04")
+        self.assertEqual(reviews["forgot"]["next_review"], "2026-10-03")
+        self.assertEqual(reviews["reset"]["next_review"], "2026-10-03")
 
     def test_process_reset_and_remove(self):
         reviews = {

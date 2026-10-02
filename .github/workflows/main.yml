@@ -2,8 +2,8 @@ name: Daily LeetCode Review
 
 on:
   schedule:
-    # Runs at 5:00 AM UTC, Monday through Friday (weekdays only)
-    - cron: "0 5 * * 1-5"
+    # Runs daily; the preflight step applies the configured UTC weekend policy
+    - cron: "0 5 * * *"
   workflow_dispatch:
 
 jobs:
@@ -25,10 +25,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Check review day
+        id: preflight
+        run: python scripts/review_day_preflight.py --github-output "$GITHUB_OUTPUT"
+
       - name: Run review script
+        if: steps.preflight.outputs.should_run == 'true'
         run: python scripts/review.py
 
       - name: Format daily review issue
+        if: steps.preflight.outputs.should_run == 'true'
         id: formatter
         run: |
           TODAY="$(date -u '+%Y-%m-%d')"
@@ -39,6 +45,7 @@ jobs:
             --github-output "$GITHUB_OUTPUT"
 
       - name: Create or update daily review issue
+        if: steps.preflight.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -60,6 +67,7 @@ jobs:
           fi
 
       - name: Close older daily issues on an empty day
+        if: steps.preflight.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -70,6 +78,7 @@ jobs:
             --paused "${{ steps.formatter.outputs.paused }}"
 
       - name: Commit updated review metadata
+        if: steps.preflight.outputs.should_run == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
