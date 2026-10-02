@@ -3,5 +3,5 @@
   "daily_show_limit": 5,
   "pause_until": "2026-08-24",
   "system_start_date": "2026-08-06",
-  "weekend_enabled": false
+  "weekend_enabled": true
 }
