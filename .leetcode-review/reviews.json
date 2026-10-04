@@ -27,7 +27,8 @@
       "5974596403"
     ],
     "processed_submission_commits": [
-      "86054e4d563da1cd63038b5a3af8882c22079e17"
+      "86054e4d563da1cd63038b5a3af8882c22079e17",
+      "9750c0fc5c7d9f87e22cae594b56bf5135916a0d"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
@@ -254,7 +255,8 @@
       "5974596403"
     ],
     "processed_submission_commits": [
-      "b5fae662d80a166438da46b8c09a68107f076424"
+      "b5fae662d80a166438da46b8c09a68107f076424",
+      "e7602e27b5494acfdfd04ce70006c257e654790d"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
@@ -269,7 +271,8 @@
       "5974596403"
     ],
     "processed_submission_commits": [
-      "2a45f9a70108e6fa0230e48f646654699f0f30b2"
+      "2a45f9a70108e6fa0230e48f646654699f0f30b2",
+      "5ef2f4b4aee48a179e70bd2ad139bb0478262cd9"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
@@ -309,6 +312,18 @@
       "a3a46621679dcd878a6d9030a8f2c57a62f69311"
     ],
     "review_count": 3,
+    "topic": "Data Structures & Algorithms"
+  },
+  "merge-k-sorted-linked-lists": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": "2026-10-03",
+    "next_review": "2026-10-04",
+    "processed_submission_commits": [
+      "8c8a99fdb0739908c5f1f567121bba4fea733c3b"
+    ],
+    "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
   "network-delay-time": {
@@ -364,6 +379,18 @@
       "a745b3d5f3c413bd978040065a1866aedee7c490"
     ],
     "review_count": 1,
+    "topic": "Data Structures & Algorithms"
+  },
+  "reorder-linked-list": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": "2026-10-03",
+    "next_review": "2026-10-04",
+    "processed_submission_commits": [
+      "fb27922d71c771714243bd9596d0b2c733ca0357"
+    ],
+    "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
   "rotting-fruit": {
@@ -470,7 +497,8 @@
     ],
     "processed_submission_commits": [
       "f942d46806cd2275daa51287b30bc5d98687c7a5",
-      "64af63c6ba72de3554feb1ab8010ad8798bc465a"
+      "64af63c6ba72de3554feb1ab8010ad8798bc465a",
+      "855abc98ed9a0a0392f1ac2db5af09c409940986"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
