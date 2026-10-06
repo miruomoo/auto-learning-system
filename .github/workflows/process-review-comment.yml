@@ -6,9 +6,21 @@ on:
 
 jobs:
   process:
-    # Only run on comments that look like review or pause commands
-    if: (contains(github.event.comment.body, 'review') || contains(github.event.comment.body, 'pause')) && github.event.issue.state == 'open'
+    # Only the repository owner's review/pause commands on daily review issues
+    # (open or closed) are processed
+    if: >-
+      github.event.comment.author_association == 'OWNER' &&
+      startsWith(github.event.issue.title, '📚 Daily LeetCode Review') &&
+      (contains(github.event.comment.body, 'review') || contains(github.event.comment.body, 'pause'))
     runs-on: ubuntu-latest
+
+    # Shared with the daily workflow so review metadata is updated by one run at
+    # a time. queue: max keeps every waiting run; the default queue keeps only
+    # one pending run and cancels the others.
+    concurrency:
+      group: review-metadata
+      cancel-in-progress: false
+      queue: max
 
     permissions:
       contents: write
@@ -17,6 +29,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Check out the branch tip when the job starts (not the commit from when
+          # the comment was posted) so a queued run sees earlier runs' updates
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,18 +51,34 @@ jobs:
             --repo "${{ github.repository }}"
 
       - name: Commit updated review metadata
+        # Keep saved changes even when the previous step failed
+        if: ${{ !cancelled() }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .leetcode-review/reviews.json .leetcode-review/config.json
-          git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
-          git push
+          # Only commit when there are actual changes
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: update review metadata [skip ci]"
+          # Rebase onto commits pushed since checkout and retry rejected pushes
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "::warning::Push attempt $attempt failed; retrying."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push the updated review metadata."
+          exit 1
 
       - name: Close issue if all problems reviewed
-        if: steps.review.outputs.all_reviewed == 'true'
+        if: steps.review.outputs.all_reviewed == 'true' && github.event.issue.state == 'open'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue close ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
-            --comment "🎉 All problems reviewed for today! Closing this issue."
+            --comment "🎉 All problems in this issue have been reviewed! Closing it."

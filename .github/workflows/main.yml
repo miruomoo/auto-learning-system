@@ -2,13 +2,21 @@ name: Daily LeetCode Review
 
 on:
   schedule:
-    # Runs daily; the preflight step applies the configured UTC weekend policy
+    # Runs daily at 05:00 UTC; the preflight step picks the review day in the
+    # configured timezone (UTC by default) and applies the weekend policy
     - cron: "0 5 * * *"
   workflow_dispatch:
 
 jobs:
   review:
     runs-on: ubuntu-latest
+
+    # Shared with the comment workflow so review metadata is updated by one run
+    # at a time. queue: max keeps every waiting run instead of cancelling them.
+    concurrency:
+      group: review-metadata
+      cancel-in-progress: false
+      queue: max
 
     permissions:
       contents: write
@@ -19,6 +27,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Check out the branch tip when the job starts so a run that waited in
+          # the concurrency queue sees earlier runs' updates
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,13 +42,16 @@ jobs:
 
       - name: Run review script
         if: steps.preflight.outputs.should_run == 'true'
-        run: python scripts/review.py
+        env:
+          TODAY: ${{ steps.preflight.outputs.today }}
+        run: python scripts/review.py --today "$TODAY"
 
       - name: Format daily review issue
         if: steps.preflight.outputs.should_run == 'true'
         id: formatter
+        env:
+          TODAY: ${{ steps.preflight.outputs.today }}
         run: |
-          TODAY="$(date -u '+%Y-%m-%d')"
           echo "today=$TODAY" >> "$GITHUB_OUTPUT"
           python scripts/issue_formatter.py \
             --today "$TODAY" \
@@ -46,6 +60,7 @@ jobs:
 
       - name: Create or update daily review issue
         if: steps.preflight.outputs.should_run == 'true'
+        id: issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -61,12 +76,39 @@ jobs:
           if [ -n "$EXISTING" ]; then
             gh issue edit "$EXISTING" --body-file "$RUNNER_TEMP/daily-review.md"
             echo "Updated existing issue #$EXISTING"
+            ISSUE_NUMBER="$EXISTING"
           else
-            gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/daily-review.md"
-            echo "Created new issue: $ISSUE_TITLE"
+            ISSUE_URL=$(gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/daily-review.md")
+            echo "Created new issue: $ISSUE_TITLE ($ISSUE_URL)"
+            ISSUE_NUMBER="${ISSUE_URL##*/}"
           fi
+          echo "number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
-      - name: Close older daily issues on an empty day
+      # Runs before closing older issues so a failure there cannot drop the metadata
+      - name: Commit updated review metadata
+        if: steps.preflight.outputs.should_run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .leetcode-review/reviews.json
+          # Only commit when there are actual changes
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: update review metadata [skip ci]"
+          # Rebase onto commits pushed since checkout and retry rejected pushes
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase && git push; then
+              exit 0
+            fi
+            git rebase --abort 2>/dev/null || true
+            echo "::warning::Push attempt $attempt failed; retrying."
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push the updated review metadata."
+          exit 1
+
+      - name: Close older daily issues
         if: steps.preflight.outputs.should_run == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -75,14 +117,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --today "${{ steps.formatter.outputs.today }}" \
             --has-reviews "${{ steps.formatter.outputs.has_reviews }}" \
-            --paused "${{ steps.formatter.outputs.paused }}"
-
-      - name: Commit updated review metadata
-        if: steps.preflight.outputs.should_run == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .leetcode-review/reviews.json
-          # Only commit when there are actual changes
-          git diff --cached --quiet || git commit -m "chore: update review metadata [skip ci]"
-          git push
+            --paused "${{ steps.formatter.outputs.paused }}" \
+            --current-issue "${{ steps.issue.outputs.number }}"

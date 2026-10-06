@@ -1,5 +1,5 @@
 """
-Process a ``review <number> <result>`` comment posted on the daily review issue.
+Process a ``review <number> <result>`` comment posted on a daily review issue.
 
 Usage (called by the GitHub Actions workflow)
 ---------------------------------------------
@@ -10,10 +10,11 @@ Usage (called by the GitHub Actions workflow)
         --repo          owner/repo
 
 The script:
-1. Fetches the issue body via the GitHub API to extract the problem-map.
-2. Parses all ``review <n> <result>`` commands from the comment.
-3. For each command, applies the SM-2 schedule update to reviews.json.
-4. Posts a reply comment with the results (or error messages).
+1. Parses the ``pause <days>`` and ``review <n> <result>`` commands in the comment.
+2. Fetches the issue via the GitHub API to extract its date and problem-map.
+3. Applies the pause and the review commands to config.json / reviews.json.
+4. Writes ``all_reviewed`` to ``GITHUB_OUTPUT``.
+5. Posts one reply comment with the results (a failed post is only a warning).
 
 Environment variables
 ---------------------
@@ -34,7 +35,8 @@ from urllib import request, error as urllib_error
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from scheduler import reset_entry, schedule  # noqa: E402
+from daily_issue_lifecycle import issue_date_from_title  # noqa: E402
+from scheduler import local_today, reset_entry, schedule  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
@@ -60,6 +62,7 @@ _REQUIRED_MAP_RE = re.compile(
 
 _VALID_RESULTS = {"easy", "medium", "forgot", "reset", "remove"}
 _RESULT_LABEL = {"easy": "Easy", "medium": "Medium", "forgot": "Forgot", "reset": "Reset", "remove": "Remove"}
+_RATINGS = {"Easy", "Medium", "Forgot"}
 
 # ---------------------------------------------------------------------------
 # GitHub API helpers
@@ -93,9 +96,9 @@ def _api_post(url: str, payload: dict) -> dict:
         return json.loads(resp.read())
 
 
-def fetch_issue_body(repo: str, issue_number: int) -> str:
+def fetch_issue(repo: str, issue_number: int) -> dict:
     url = f"{_GH_API}/repos/{repo}/issues/{issue_number}"
-    return _api_get(url)["body"] or ""
+    return _api_get(url)
 
 
 def post_comment(repo: str, issue_number: int, body: str) -> None:
@@ -205,12 +208,34 @@ def extract_required_problem_map(
         return problem_map
 
 
-def all_required_problems_reviewed(
-    reviews: dict, required_problem_map: dict[str, str], today: date
+def problem_completed_for_issue(
+    entry: dict | None, issue_date: date, issue_number: int | None = None
 ) -> bool:
-    """Return whether every required problem was reviewed on *today*."""
+    """
+    Return whether a problem no longer needs a review for an issue.
+
+    A problem is complete when it was removed from the review pool, when a
+    comment on this issue rated or reset it (``completed_in_issues``), or when
+    it was reviewed on or after the issue's date, e.g. from another issue.
+    """
+    if entry is None:
+        return True
+    completed_in = entry.get("completed_in_issues")
+    if issue_number is not None and isinstance(completed_in, list) and issue_number in completed_in:
+        return True
+    last_review = entry.get("last_review")
+    return isinstance(last_review, str) and last_review >= issue_date.isoformat()
+
+
+def all_required_problems_reviewed(
+    reviews: dict,
+    required_problem_map: dict[str, str],
+    issue_date: date,
+    issue_number: int | None = None,
+) -> bool:
+    """Return whether every required problem of the issue dated *issue_date* is complete."""
     return all(
-        reviews.get(problem_id, {}).get("last_review") == today.isoformat()
+        problem_completed_for_issue(reviews.get(problem_id), issue_date, issue_number)
         for problem_id in required_problem_map.values()
     )
 
@@ -240,6 +265,17 @@ def _available_list(problem_map: dict[str, str]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _record_completion(
+    entry: dict, issue_number: int | None, comment_marker: str | None
+) -> None:
+    if issue_number is not None:
+        completed_in = entry.setdefault("completed_in_issues", [])
+        if issue_number not in completed_in:
+            completed_in.append(issue_number)
+    if comment_marker is not None:
+        entry.setdefault("processed_rating_comment_ids", []).append(comment_marker)
+
+
 def process_commands(
     commands: list[tuple[int, str]],
     problem_map: dict[str, str],
@@ -247,28 +283,49 @@ def process_commands(
     today: date,
     comment_id: int | None = None,
     weekend_enabled: bool = False,
+    issue_date: date | None = None,
+    issue_number: int | None = None,
 ) -> tuple[list[dict], list[str]]:
     """
     Apply each command to *reviews* (mutated in place).
 
+    *today* is the date a rating is recorded on; *issue_date* is the date of
+    the issue the comment was posted on (defaults to *today*).  An Easy,
+    Medium or Forgot rating is skipped when the problem was already rated on
+    or after *issue_date*, so reviewing a problem in two issues does not run
+    SM-2 twice.  Only the first command for a problem in a comment is applied.
+
     Returns:
-        results  – list of result dicts for successful commands
+        results  – list of result dicts; skipped commands carry a ``skipped`` reason
         errors   – list of error message strings
     """
+    if issue_date is None:
+        issue_date = today
     results: list[dict] = []
     errors: list[str] = []
+    comment_marker = str(comment_id) if comment_id is not None else None
+    handled_in_comment: set[str] = set()
+    removed_in_comment: set[str] = set()
 
     for num, rating in commands:
         key = str(num)
         if key not in problem_map:
             errors.append(
                 f"❌ **Unable to process review**\n\n"
-                f"Problem #{num} does not exist in today's review list.\n\n"
+                f"Problem #{num} does not exist in this issue's review list.\n\n"
                 f"**Available problems:**\n{_available_list(problem_map)}"
             )
             continue
 
         problem_id = problem_map[key]
+        result = {"num": num, "name": _display_name(problem_id), "rating": rating}
+        if problem_id in removed_in_comment:
+            results.append({**result, "skipped": "already removed earlier in this comment"})
+            continue
+        if problem_id in handled_in_comment:
+            results.append({**result, "skipped": "already handled earlier in this comment"})
+            continue
+
         if problem_id not in reviews:
             errors.append(
                 f"❌ **Problem not found in reviews.json**\n\n"
@@ -276,18 +333,32 @@ def process_commands(
             )
             continue
 
-        comment_marker = str(comment_id) if comment_id is not None else None
         processed_comments = reviews[problem_id].get("processed_rating_comment_ids", [])
         if comment_marker is not None and comment_marker in processed_comments:
             continue
 
         if rating == "Remove":
             del reviews[problem_id]
+            removed_in_comment.add(problem_id)
+            results.append(result)
+            continue
+
+        handled_in_comment.add(problem_id)
+        last_rated = reviews[problem_id].get("last_rated")
+        if (
+            rating in _RATINGS
+            and isinstance(last_rated, str)
+            and last_rated >= issue_date.isoformat()
+        ):
+            _record_completion(reviews[problem_id], issue_number, comment_marker)
             results.append(
                 {
-                    "num": num,
-                    "name": _display_name(problem_id),
-                    "rating": rating,
+                    **result,
+                    "skipped": (
+                        f"already rated on {last_rated}, on or after this issue's date, "
+                        f"so the schedule was not changed again. To re-rate it, "
+                        f"comment `review {num} reset` first."
+                    ),
                 }
             )
             continue
@@ -300,15 +371,14 @@ def process_commands(
             )
         )
         entry = reviews[problem_id]
-        if comment_marker is not None:
-            entry.setdefault("processed_rating_comment_ids", []).append(comment_marker)
+        if rating in _RATINGS:
+            entry["last_rated"] = today.isoformat()
+        _record_completion(entry, issue_number, comment_marker)
         next_date = date.fromisoformat(entry["next_review"])
 
         results.append(
             {
-                "num": num,
-                "name": _display_name(problem_id),
-                "rating": rating,
+                **result,
                 "next_review": next_date,
                 "interval": entry["interval"],
             }
@@ -317,12 +387,16 @@ def process_commands(
     return results, errors
 
 
-def build_reply(results: list[dict], errors: list[str]) -> str:
+def build_reply(
+    results: list[dict], errors: list[str], pause_message: str | None = None
+) -> str:
     parts: list[str] = []
+    applied = [r for r in results if "skipped" not in r]
+    skipped = [r for r in results if "skipped" in r]
 
-    if results:
-        if len(results) == 1:
-            r = results[0]
+    if applied:
+        if len(applied) == 1:
+            r = applied[0]
             if r["rating"] == "Remove":
                 parts.append(
                     f"✅ **Review updated**\n\n"
@@ -341,7 +415,7 @@ def build_reply(results: list[dict], errors: list[str]) -> str:
                 )
         else:
             lines = ["✅ **Reviews updated**\n"]
-            for r in results:
+            for r in applied:
                 if r["rating"] == "Remove":
                     lines.append(
                         f"{r['num']}. **{r['name']}**\n"
@@ -357,8 +431,33 @@ def build_reply(results: list[dict], errors: list[str]) -> str:
                     )
             parts.append("\n".join(lines))
 
+    if pause_message:
+        parts.append(pause_message)
+
+    if skipped:
+        lines = ["⏭️ **Skipped**\n"]
+        for r in skipped:
+            lines.append(f"{r['num']}. **{r['name']}** ({r['rating']}): {r['skipped']}")
+        parts.append("\n".join(lines))
+
     parts.extend(errors)
     return "\n\n---\n\n".join(parts)
+
+
+def _pause_message(pause_days: int, pause_until: date) -> str:
+    return (
+        f"⏸️ **Reviews paused**\n\n"
+        f"Automation has been paused for **{pause_days} day{'s' if pause_days != 1 else ''}**.\n"
+        f"Reviews will resume on **{pause_until.isoformat()}**."
+    )
+
+
+def _write_all_reviewed(all_done: bool) -> None:
+    """Tell the workflow whether the issue can be closed."""
+    github_output = os.environ.get("GITHUB_OUTPUT", "")
+    if github_output:
+        with open(github_output, "a") as f:
+            f.write(f"all_reviewed={'true' if all_done else 'false'}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -373,88 +472,88 @@ def main() -> None:
     parser.add_argument("--repo", required=True, help="owner/repo")
     args = parser.parse_args()
 
-    today = date.today()
-
     # Read comment body from environment variable to avoid shell-quoting issues
     comment_body = os.environ.get("REVIEW_COMMENT_BODY", "")
-    if not comment_body:
-        print("REVIEW_COMMENT_BODY env var is empty. Skipping.")
+    pause_days = parse_pause_command(comment_body)
+    commands = parse_commands(comment_body)
+    if pause_days is None and not commands:
+        print("No review or pause commands found. Skipping.")
+        _write_all_reviewed(False)
         return
 
-    # 1a. Check for a pause command — handled independently of review commands
-    pause_days = parse_pause_command(comment_body)
+    config = _load_config()
+    today = local_today(config.get("timezone"))
+
+    # 1. Apply the pause first so it is kept even if the reviews cannot be processed
+    pause_message = None
     if pause_days is not None:
         pause_until = today + timedelta(days=pause_days)
-        config = _load_config()
         config["pause_until"] = pause_until.isoformat()
         _save_config(config)
-        reply = (
-            f"⏸️ **Reviews paused**\n\n"
-            f"Automation has been paused for **{pause_days} day{'s' if pause_days != 1 else ''}**.\n"
-            f"Reviews will resume on **{pause_until.isoformat()}**."
-        )
+        pause_message = _pause_message(pause_days, pause_until)
+
+    # 2. Apply review commands using this issue's date and problem map
+    results: list[dict] = []
+    errors: list[str] = []
+    all_done = False
+    fetch_failed = False
+    if commands:
+        try:
+            issue = fetch_issue(args.repo, args.issue_number)
+        except Exception as exc:
+            print(f"Error fetching issue: {exc}", file=sys.stderr)
+            fetch_failed = True
+            errors.append(
+                "❌ **Unable to process review**\n\n"
+                "This issue could not be loaded, so no reviews were applied. "
+                "Please post the review commands again."
+            )
+        else:
+            issue_body = issue.get("body") or ""
+            problem_map = extract_problem_map(issue_body)
+            if not problem_map:
+                print("Could not find problem map in issue body.", file=sys.stderr)
+                errors.append(
+                    "❌ **Unable to process review**\n\n"
+                    "This issue has no problem list, so there is nothing to review here."
+                )
+            else:
+                issue_date = issue_date_from_title(issue.get("title") or "") or today
+                reviews = _load_reviews()
+                results, errors = process_commands(
+                    commands,
+                    problem_map,
+                    reviews,
+                    today,
+                    comment_id=args.comment_id,
+                    weekend_enabled=config.get("weekend_enabled") is True,
+                    issue_date=issue_date,
+                    issue_number=args.issue_number,
+                )
+                if results:
+                    _save_reviews(reviews)
+                all_done = all_required_problems_reviewed(
+                    reviews,
+                    extract_required_problem_map(issue_body, problem_map),
+                    issue_date,
+                    args.issue_number,
+                )
+
+    # 3. Signal whether the issue can be closed before replying, so a failed
+    #    reply cannot skip the close check
+    _write_all_reviewed(all_done)
+
+    # 4. Reply once.  The metadata is already saved, so a failed post is only a warning.
+    reply = build_reply(results, errors, pause_message)
+    if reply:
         try:
             post_comment(args.repo, args.issue_number, reply)
         except Exception as exc:
-            print(f"Error posting comment: {exc}", file=sys.stderr)
-            sys.exit(1)
-        return
+            detail = str(exc).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+            print(f"::warning::Could not post the reply comment: {detail}")
 
-    # 1b. Parse review commands from the comment
-    commands = parse_commands(comment_body)
-    if not commands:
-        # No review commands found — ignore the comment silently
-        print("No review commands found. Skipping.")
-        return
-
-    # 2. Fetch issue body to get problem map
-    try:
-        issue_body = fetch_issue_body(args.repo, args.issue_number)
-    except Exception as exc:
-        print(f"Error fetching issue: {exc}", file=sys.stderr)
+    if fetch_failed:
         sys.exit(1)
-
-    problem_map = extract_problem_map(issue_body)
-    if not problem_map:
-        print("Could not find problem map in issue body. Skipping.", file=sys.stderr)
-        sys.exit(1)
-    required_problem_map = extract_required_problem_map(issue_body, problem_map)
-
-    # 3. Load reviews, apply updates
-    config = _load_config()
-    reviews = _load_reviews()
-    results, errors = process_commands(
-        commands,
-        problem_map,
-        reviews,
-        today,
-        comment_id=args.comment_id,
-        weekend_enabled=config.get("weekend_enabled") is True,
-    )
-
-    # 4. Save updated reviews
-    if results:
-        _save_reviews(reviews)
-
-    # 5. Post reply
-    reply = build_reply(results, errors)
-    if not reply:
-        return
-
-    try:
-        post_comment(args.repo, args.issue_number, reply)
-    except Exception as exc:
-        print(f"Error posting comment: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    # 6. Signal whether all problems have been reviewed today
-    all_done = all_required_problems_reviewed(reviews, required_problem_map, today)
-
-    # Write to GITHUB_OUTPUT so the workflow can act on it
-    github_output = os.environ.get("GITHUB_OUTPUT", "")
-    if github_output:
-        with open(github_output, "a") as f:
-            f.write(f"all_reviewed={'true' if all_done else 'false'}\n")
 
 
 if __name__ == "__main__":
