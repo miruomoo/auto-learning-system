@@ -3,7 +3,7 @@ Daily review entrypoint.
 
 Usage
 -----
-    python scripts/review.py [--rate <problem-id> <Easy|Medium|Forgot>]
+    python scripts/review.py [--today YYYY-MM-DD] [rate <problem-id> <Easy|Medium|Forgot>]
 
 When called without arguments (the normal GitHub Actions path) it:
 
@@ -14,7 +14,9 @@ When called without arguments (the normal GitHub Actions path) it:
 5. Prints a human-readable report of all problems due today, sorted by:
       Hard first → most overdue → lowest ease factor → oldest review date.
 
-When called with --rate it applies a rating to a single problem and exits.
+When called with ``rate`` it applies a rating to a single problem and exits.
+``--today`` overrides the date, which otherwise comes from the optional
+``timezone`` in config.json (UTC by default).
 
 Exit codes
 ----------
@@ -37,7 +39,7 @@ _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
 from discovery import discover_problems  # noqa: E402
-from scheduler import days_overdue, is_due, new_entry, review_date, schedule  # noqa: E402
+from scheduler import days_overdue, is_due, local_today, new_entry, review_date, schedule  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -351,10 +353,9 @@ def _build_report(
 
 
 def run_daily(today: date | None = None) -> None:
-    if today is None:
-        today = date.today()
-
     config = _load_config()
+    if today is None:
+        today = local_today(config.get("timezone"))
     weekend_enabled = config.get("weekend_enabled") is True
 
     if is_paused(config, today):
@@ -403,10 +404,9 @@ def run_daily(today: date | None = None) -> None:
 
 
 def run_rate(problem_id: str, rating: str, today: date | None = None) -> None:
-    if today is None:
-        today = date.today()
-
     config = _load_config()
+    if today is None:
+        today = local_today(config.get("timezone"))
     weekend_enabled = config.get("weekend_enabled") is True
     reviews = _load_reviews()
     if problem_id not in reviews:
@@ -433,6 +433,11 @@ def run_rate(problem_id: str, rating: str, today: date | None = None) -> None:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="LeetCode spaced-repetition system")
+    parser.add_argument(
+        "--today",
+        type=date.fromisoformat,
+        help="Override today's date (defaults to the configured timezone, or UTC)",
+    )
     sub = parser.add_subparsers(dest="command")
 
     rate_cmd = sub.add_parser("rate", help="Record the result of a review")
@@ -445,9 +450,9 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     if args.command == "rate":
-        run_rate(args.problem_id, args.rating)
+        run_rate(args.problem_id, args.rating, args.today)
     else:
-        run_daily()
+        run_daily(args.today)
 
 
 if __name__ == "__main__":

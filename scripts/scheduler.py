@@ -14,8 +14,10 @@ FORGOT – could not solve or had to look at the solution
 from __future__ import annotations
 
 import math
-from datetime import date, timedelta
+import sys
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 Rating = Literal["Easy", "Medium", "Forgot"]
 
@@ -30,6 +32,33 @@ _MEDIUM_INTERVAL_FACTOR = 1.5
 
 def _clamp_ease(ease: float) -> float:
     return max(_MIN_EASE, ease)
+
+
+def _round_half_up(value: float) -> int:
+    """Round halves up; Python's ``round()`` rounds halves to the nearest even number."""
+    # Ease factors are stored with 4 decimals, so trimming float noise first keeps
+    # exact halves such as 75 * 1.38 (103.49999999999999 as a float) at .5.
+    return math.floor(round(value, 9) + 0.5)
+
+
+def resolve_timezone(name: object) -> tzinfo:
+    """Return the IANA timezone *name*, or UTC when it is unset or invalid."""
+    if name is None or name == "":
+        return timezone.utc
+    if isinstance(name, str):
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            pass
+    print(f"⚠️  Unknown timezone {name!r} in config.json; using UTC.", file=sys.stderr)
+    return timezone.utc
+
+
+def local_today(timezone_name: object = None, now: datetime | None = None) -> date:
+    """Return the current date in the configured timezone (UTC by default)."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return now.astimezone(resolve_timezone(timezone_name)).date()
 
 
 def next_weekday(value: date) -> date:
@@ -86,10 +115,10 @@ def schedule(
 
     if rating == "Easy":
         ease = _clamp_ease(ease + _EASY_EASE_DELTA)
-        interval = max(1, round(interval * ease))
+        interval = max(1, _round_half_up(interval * ease))
     elif rating == "Medium":
         ease = _clamp_ease(ease + _MEDIUM_EASE_DELTA)
-        interval = max(1, round(interval * _MEDIUM_INTERVAL_FACTOR))
+        interval = max(1, _round_half_up(interval * _MEDIUM_INTERVAL_FACTOR))
     else:  # Forgot
         ease = _clamp_ease(ease + _FORGOT_EASE_DELTA)
         interval = 1
@@ -112,7 +141,9 @@ def reset_entry(
 
     Returns a **new** dict (the original is not mutated).  The ``difficulty``
     and ``topic`` fields are preserved; all scheduling fields are reset to the
-    same defaults used for a newly discovered problem.
+    same defaults used for a newly discovered problem.  Processing markers and
+    the issues the problem was completed in are kept; ``last_rated`` is
+    cleared so the next rating counts as the first one after the reset.
     """
     if today is None:
         today = date.today()
@@ -125,7 +156,11 @@ def reset_entry(
         "ease_factor": _INITIAL_EASE,
         "review_count": 0,
     }
-    for marker in ("processed_submission_commits", "processed_rating_comment_ids"):
+    for marker in (
+        "processed_submission_commits",
+        "processed_rating_comment_ids",
+        "completed_in_issues",
+    ):
         if marker in entry:
             reset[marker] = list(entry[marker])
     return reset

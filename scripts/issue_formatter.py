@@ -28,7 +28,7 @@ from pathlib import Path
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from scheduler import days_overdue, is_due  # noqa: E402
+from scheduler import days_overdue, is_due, local_today  # noqa: E402
 
 _REPO_ROOT = Path(__file__).parent.parent
 _REVIEWS_PATH = _REPO_ROOT / ".leetcode-review" / "reviews.json"
@@ -112,10 +112,10 @@ def build_issue_body(today: date | None = None) -> tuple[str, list[tuple[str, di
     Returns (body_str, shown_items) where shown_items is the ordered list of
     (problem_id, entry) pairs shown in the issue.
     """
-    if today is None:
-        today = date.today()
-
     config = _load_config()
+    if today is None:
+        today = local_today(config.get("timezone"))
+
     weekend_enabled = config.get("weekend_enabled") is True
     if _is_paused(config, today):
         pause_until = config["pause_until"]
@@ -272,15 +272,15 @@ def main() -> None:
     parser.add_argument("--github-output", type=Path, help="Write has_reviews to a GitHub Actions output file")
     args = parser.parse_args()
 
-    today = date.fromisoformat(args.today) if args.today else None
+    config = _load_config()
+    today = date.fromisoformat(args.today) if args.today else local_today(config.get("timezone"))
     body, shown_items = build_issue_body(today)
     if args.body_file:
         args.body_file.write_text(body + "\n")
     else:
         print(body)
     if args.github_output:
-        effective_today = today or date.today()
-        paused = _is_paused(_load_config(), effective_today)
+        paused = _is_paused(config, today)
         with args.github_output.open("a") as fh:
             fh.write(f"has_reviews={'true' if shown_items else 'false'}\n")
             fh.write(f"paused={'true' if paused else 'false'}\n")
