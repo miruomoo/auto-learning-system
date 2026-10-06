@@ -1,10 +1,14 @@
+import contextlib
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).parent / "scripts"))
@@ -43,6 +47,15 @@ def untouched_entry(**overrides) -> dict:
     }
     entry.update(overrides)
     return entry
+
+
+def daily_issue(
+    issue_date: str, problem_map: dict, required_problem_map: dict | None = None
+) -> dict:
+    body = f"<!-- problem-map: {json.dumps(problem_map)} -->"
+    if required_problem_map is not None:
+        body += f"\n<!-- required-problem-map: {json.dumps(required_problem_map)} -->"
+    return {"title": f"📚 Daily LeetCode Review — {issue_date}", "body": body}
 
 
 class SubmissionSyncTests(unittest.TestCase):
@@ -501,6 +514,103 @@ class DailyIssueLifecycleTests(unittest.TestCase):
         ]
         self.assertEqual(len(close_calls), 1)
 
+    def test_nonempty_run_closes_older_issues_as_superseded(self):
+        listed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {"number": 7, "title": "📚 Daily LeetCode Review — 2026-09-21"},
+                    {"number": 9, "title": "📚 Daily LeetCode Review — 2026-09-22"},
+                    {"number": 8, "title": "Unrelated issue"},
+                ]
+            ),
+            stderr="",
+        )
+        with patch.object(
+            daily_issue_lifecycle.subprocess,
+            "run",
+            side_effect=[listed, subprocess.CompletedProcess(args=[], returncode=0)],
+        ) as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=True, current_issue=9
+            )
+        self.assertEqual(closed, [7])
+        close_command = run.call_args_list[1].args[0]
+        self.assertEqual(close_command[:4], ["gh", "issue", "close", "7"])
+        comment = close_command[close_command.index("--comment") + 1]
+        self.assertEqual(comment, daily_issue_lifecycle.superseded_comment(9))
+        self.assertIn("superseded by #9", comment)
+        self.assertIn("review <number> <result>", comment)
+
+    def test_current_issue_is_never_closed(self):
+        listed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                [{"number": 9, "title": "📚 Daily LeetCode Review — 2026-09-21"}]
+            ),
+            stderr="",
+        )
+        with patch.object(
+            daily_issue_lifecycle.subprocess, "run", side_effect=[listed]
+        ) as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo", date(2026, 9, 22), has_reviews=True, current_issue=9
+            )
+        self.assertEqual(closed, [])
+        self.assertEqual(run.call_count, 1)
+
+    def test_paused_run_keeps_older_issues_open_even_with_current_issue(self):
+        with patch.object(daily_issue_lifecycle.subprocess, "run") as run:
+            closed = daily_issue_lifecycle.close_stale_daily_issues(
+                "owner/repo",
+                date(2026, 9, 22),
+                has_reviews=False,
+                paused=True,
+                current_issue=9,
+            )
+        self.assertEqual(closed, [])
+        run.assert_not_called()
+
+    def test_cli_passes_optional_current_issue(self):
+        for value, expected in (("12", 12), ("", None)):
+            with self.subTest(value=value):
+                with (
+                    patch.object(
+                        daily_issue_lifecycle, "close_stale_daily_issues", return_value=[]
+                    ) as close,
+                    patch.object(
+                        sys,
+                        "argv",
+                        [
+                            "daily_issue_lifecycle.py",
+                            "--repo",
+                            "owner/repo",
+                            "--today",
+                            "2026-09-22",
+                            "--has-reviews",
+                            "true",
+                            "--paused",
+                            "false",
+                            "--current-issue",
+                            value,
+                        ],
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    daily_issue_lifecycle.main()
+                self.assertEqual(close.call_args.kwargs["current_issue"], expected)
+
+    def test_issue_date_from_title(self):
+        self.assertEqual(
+            daily_issue_lifecycle.issue_date_from_title(
+                "📚 Daily LeetCode Review — 2026-10-05"
+            ),
+            date(2026, 10, 5),
+        )
+        self.assertIsNone(daily_issue_lifecycle.issue_date_from_title("Unrelated issue"))
+
 
 class WeekendConfigAndPreflightTests(unittest.TestCase):
     def test_missing_weekend_setting_defaults_to_false_everywhere(self):
@@ -548,8 +658,8 @@ class WeekendConfigAndPreflightTests(unittest.TestCase):
             "Run review script",
             "Format daily review issue",
             "Create or update daily review issue",
-            "Close older daily issues on an empty day",
             "Commit updated review metadata",
+            "Close older daily issues",
         ):
             with self.subTest(step=step_name):
                 section = workflow.split(f"- name: {step_name}", 1)[1].split(
@@ -924,6 +1034,455 @@ class SchedulerAndCommentTests(unittest.TestCase):
 
         self.assertEqual(required_map, problem_map)
         self.assertFalse(prc.all_required_problems_reviewed(reviews, required_map, today))
+
+    def test_intervals_round_halves_up(self):
+        cases = [
+            # 3 * 1.5 = 4.5; round() gave 4
+            ("Medium", untouched_entry(interval=3), 5),
+            # 2 * 2.25 = 4.5
+            ("Easy", untouched_entry(interval=2, ease_factor=2.1), 5),
+            # 75 * 1.38 is 103.49999999999999 as a float
+            ("Easy", untouched_entry(interval=75, ease_factor=1.23), 104),
+        ]
+        for rating, entry, expected in cases:
+            with self.subTest(rating=rating, interval=entry["interval"]):
+                result = scheduler.schedule(entry, rating, date(2026, 10, 6), True)
+                self.assertEqual(result["interval"], expected)
+
+    def test_reset_keeps_completion_markers_and_clears_last_rated(self):
+        entry = untouched_entry(
+            processed_rating_comment_ids=["1"],
+            completed_in_issues=[64],
+            last_rated="2026-10-05",
+        )
+        result = scheduler.reset_entry(entry, date(2026, 10, 6))
+        self.assertEqual(result["completed_in_issues"], [64])
+        self.assertIsNot(result["completed_in_issues"], entry["completed_in_issues"])
+        self.assertEqual(result["processed_rating_comment_ids"], ["1"])
+        self.assertNotIn("last_rated", result)
+
+    def test_review_on_or_after_issue_date_completes_the_issue(self):
+        # Reviews that continue past midnight still count for the issue's date.
+        reviews = {"problem": untouched_entry(last_review="2026-10-06")}
+        required = {"1": "problem"}
+        self.assertTrue(
+            prc.all_required_problems_reviewed(reviews, required, date(2026, 10, 5))
+        )
+        self.assertFalse(
+            prc.all_required_problems_reviewed(reviews, required, date(2026, 10, 7))
+        )
+
+    def test_removed_problem_counts_as_complete(self):
+        today = date(2026, 10, 6)
+        reviews = {
+            "kept": untouched_entry(last_review="2026-10-06"),
+            "gone": untouched_entry(),
+        }
+        required = {"1": "kept", "2": "gone"}
+        self.assertFalse(prc.all_required_problems_reviewed(reviews, required, today, 70))
+        prc.process_commands(
+            [(2, "Remove")], required, reviews, today, issue_date=today, issue_number=70
+        )
+        self.assertTrue(prc.all_required_problems_reviewed(reviews, required, today, 70))
+
+    def test_reset_problem_counts_as_complete_and_can_be_rated_again(self):
+        today = date(2026, 10, 6)
+        reviews = {
+            "problem": untouched_entry(
+                last_rated="2026-10-06",
+                last_review="2026-10-06",
+                review_count=3,
+                completed_in_issues=[69],
+            )
+        }
+        required = {"1": "problem"}
+        prc.process_commands(
+            [(1, "Reset")], required, reviews, today, comment_id=1, issue_date=today, issue_number=70
+        )
+        entry = reviews["problem"]
+        self.assertIsNone(entry["last_review"])
+        self.assertNotIn("last_rated", entry)
+        self.assertEqual(entry["completed_in_issues"], [69, 70])
+        self.assertTrue(prc.all_required_problems_reviewed(reviews, required, today, 70))
+        self.assertFalse(prc.all_required_problems_reviewed(reviews, required, today, 71))
+
+        results, errors = prc.process_commands(
+            [(1, "Easy")], required, reviews, today, comment_id=2, issue_date=today, issue_number=70
+        )
+        self.assertEqual(errors, [])
+        self.assertNotIn("skipped", results[0])
+        self.assertEqual(reviews["problem"]["review_count"], 1)
+
+    def test_rating_same_problem_in_two_issues_runs_sm2_once(self):
+        today = date(2026, 10, 6)
+        yesterday_issue = ({"4": "shared"}, date(2026, 10, 5), 69)
+        today_issue = ({"1": "shared"}, today, 70)
+        for first, second in ((yesterday_issue, today_issue), (today_issue, yesterday_issue)):
+            with self.subTest(first_issue=first[2]):
+                reviews = {"shared": untouched_entry(next_review="2026-10-05")}
+                for comment_id, (problem_map, issue_date, issue_number) in enumerate(
+                    (first, second), start=1
+                ):
+                    results, errors = prc.process_commands(
+                        [(int(next(iter(problem_map))), "Easy")],
+                        problem_map,
+                        reviews,
+                        today,
+                        comment_id=comment_id,
+                        issue_date=issue_date,
+                        issue_number=issue_number,
+                    )
+                self.assertEqual(errors, [])
+                self.assertIn("already rated on 2026-10-06", results[0]["skipped"])
+                self.assertIn("⏭️ **Skipped**", prc.build_reply(results, errors))
+                entry = reviews["shared"]
+                self.assertEqual(entry["review_count"], 1)
+                self.assertEqual(entry["interval"], 3)
+                self.assertEqual(sorted(entry["completed_in_issues"]), [69, 70])
+
+    def test_rating_applies_when_last_rating_is_older_than_issue(self):
+        reviews = {
+            "problem": untouched_entry(
+                last_rated="2026-10-05",
+                last_review="2026-10-05",
+                next_review="2026-10-06",
+                review_count=1,
+            )
+        }
+        results, errors = prc.process_commands(
+            [(1, "Medium")], {"1": "problem"}, reviews, date(2026, 10, 6)
+        )
+        self.assertEqual(errors, [])
+        self.assertNotIn("skipped", results[0])
+        self.assertEqual(reviews["problem"]["review_count"], 2)
+        self.assertEqual(reviews["problem"]["last_rated"], "2026-10-06")
+
+    def test_remove_then_rate_in_same_comment_reports_already_removed(self):
+        reviews = {"problem": untouched_entry()}
+        results, errors = prc.process_commands(
+            [(1, "Remove"), (1, "Easy")], {"1": "problem"}, reviews, date(2026, 10, 6), comment_id=9
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(results[1]["skipped"], "already removed earlier in this comment")
+        self.assertNotIn("problem", reviews)
+
+    def test_second_command_for_problem_in_same_comment_is_reported(self):
+        reviews = {"problem": untouched_entry()}
+        results, errors = prc.process_commands(
+            [(1, "Easy"), (1, "Medium")], {"1": "problem"}, reviews, date(2026, 10, 6), comment_id=9
+        )
+        self.assertEqual(errors, [])
+        self.assertEqual(results[1]["skipped"], "already handled earlier in this comment")
+        self.assertEqual(reviews["problem"]["review_count"], 1)
+        reply = prc.build_reply(results, errors)
+        self.assertTrue(reply.startswith("✅ **Review updated**"))
+        self.assertIn(
+            "1. **Problem** (Medium): already handled earlier in this comment", reply
+        )
+
+
+class ReviewCommentMainTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        self.reviews_path = root / "reviews.json"
+        self.config_path = root / "config.json"
+        self.output_path = root / "output"
+        self.config_path.write_text(json.dumps({"pause_until": None, "weekend_enabled": False}))
+
+    def write_reviews(self, reviews: dict) -> None:
+        self.reviews_path.write_text(json.dumps(reviews))
+
+    def reviews(self) -> dict:
+        return json.loads(self.reviews_path.read_text())
+
+    def config(self) -> dict:
+        return json.loads(self.config_path.read_text())
+
+    def run_main(
+        self,
+        comment: str,
+        issue: dict | None = None,
+        *,
+        today: date = date(2026, 10, 6),
+        comment_id: int = 500,
+        fetch_error: Exception | None = None,
+        post_side_effect=None,
+    ) -> SimpleNamespace:
+        self.output_path.write_text("")
+        fetch = Mock(side_effect=fetch_error, return_value=issue)
+        post = Mock(side_effect=post_side_effect)
+        stdout = io.StringIO()
+        exit_code = 0
+        with (
+            patch.object(prc, "_REVIEWS_PATH", self.reviews_path),
+            patch.object(prc, "_CONFIG_PATH", self.config_path),
+            patch.object(prc, "fetch_issue", fetch),
+            patch.object(prc, "post_comment", post),
+            patch.object(prc, "local_today", return_value=today) as local_today,
+            patch.dict(
+                os.environ,
+                {"REVIEW_COMMENT_BODY": comment, "GITHUB_OUTPUT": str(self.output_path)},
+            ),
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "process_review_comment.py",
+                    "--issue-number",
+                    "64",
+                    "--comment-id",
+                    str(comment_id),
+                    "--repo",
+                    "owner/repo",
+                ],
+            ),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            try:
+                prc.main()
+            except SystemExit as exc:
+                exit_code = exc.code
+        return SimpleNamespace(
+            exit_code=exit_code,
+            output=self.output_path.read_text(),
+            stdout=stdout.getvalue(),
+            fetch=fetch,
+            post=post,
+            local_today=local_today,
+        )
+
+    def test_review_and_pause_in_one_comment_are_both_applied_with_one_reply(self):
+        self.config_path.write_text(json.dumps({"pause_until": None, "timezone": "Asia/Tokyo"}))
+        self.write_reviews({"first": untouched_entry(next_review="2026-10-06")})
+        result = self.run_main(
+            "review 1 easy\npause 3", daily_issue("2026-10-06", {"1": "first"})
+        )
+        self.assertEqual(result.exit_code, 0)
+        result.local_today.assert_called_once_with("Asia/Tokyo")
+        self.assertEqual(self.config()["pause_until"], "2026-10-09")
+        self.assertEqual(self.config()["timezone"], "Asia/Tokyo")
+        self.assertEqual(self.reviews()["first"]["review_count"], 1)
+        result.post.assert_called_once()
+        reply = result.post.call_args.args[2]
+        self.assertIn("✅ **Review updated**", reply)
+        self.assertIn("⏸️ **Reviews paused**", reply)
+        self.assertEqual(result.output, "all_reviewed=true\n")
+
+    def test_failed_reply_is_a_warning_after_saving_and_reporting(self):
+        self.write_reviews({"first": untouched_entry()})
+        output_when_posting = []
+
+        def failing_post(*_args):
+            output_when_posting.append(self.output_path.read_text())
+            raise RuntimeError("HTTP Error 502")
+
+        result = self.run_main(
+            "review 1 medium",
+            daily_issue("2026-10-06", {"1": "first"}),
+            post_side_effect=failing_post,
+        )
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(output_when_posting, ["all_reviewed=true\n"])
+        self.assertIn("::warning::Could not post the reply comment: HTTP Error 502", result.stdout)
+        self.assertEqual(self.reviews()["first"]["review_count"], 1)
+
+    def test_rerun_of_processed_comment_still_reports_all_reviewed(self):
+        self.write_reviews({"first": untouched_entry()})
+        issue = daily_issue("2026-10-06", {"1": "first"})
+        self.run_main("review 1 easy", issue)
+        rerun = self.run_main("review 1 easy", issue)
+        rerun.post.assert_not_called()
+        self.assertEqual(rerun.output, "all_reviewed=true\n")
+        self.assertEqual(self.reviews()["first"]["review_count"], 1)
+
+    def test_comment_without_commands_reports_not_reviewed(self):
+        self.write_reviews({})
+        result = self.run_main("Thanks!")
+        result.fetch.assert_not_called()
+        result.post.assert_not_called()
+        self.assertEqual(result.output, "all_reviewed=false\n")
+
+    def test_reviews_after_midnight_complete_the_issue(self):
+        # Issue #64: problem 1 was reviewed on the issue date (before completion
+        # markers existed) and problem 2 after midnight UTC.
+        self.write_reviews(
+            {
+                "first": untouched_entry(last_review="2026-10-05", next_review="2026-10-08"),
+                "second": untouched_entry(next_review="2026-10-05"),
+            }
+        )
+        result = self.run_main(
+            "review 2 easy",
+            daily_issue("2026-10-05", {"1": "first", "2": "second"}),
+            today=date(2026, 10, 6),
+        )
+        self.assertEqual(result.output, "all_reviewed=true\n")
+        self.assertEqual(self.reviews()["second"]["completed_in_issues"], [64])
+        self.assertEqual(self.reviews()["second"]["last_rated"], "2026-10-06")
+
+    def test_issue_without_problem_map_replies_with_error_and_keeps_pause(self):
+        self.write_reviews({})
+        issue = {"title": "📚 Daily LeetCode Review — 2026-10-06", "body": "⏸️ Reviews are paused"}
+        result = self.run_main("pause 2\nreview 1 easy", issue)
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(self.config()["pause_until"], "2026-10-08")
+        reply = result.post.call_args.args[2]
+        self.assertIn("⏸️ **Reviews paused**", reply)
+        self.assertIn("This issue has no problem list", reply)
+        self.assertEqual(result.output, "all_reviewed=false\n")
+
+    def test_fetch_failure_fails_after_saving_pause_and_reporting(self):
+        self.write_reviews({})
+        result = self.run_main(
+            "pause 2\nreview 1 easy", fetch_error=RuntimeError("HTTP Error 500")
+        )
+        self.assertEqual(result.exit_code, 1)
+        self.assertEqual(self.config()["pause_until"], "2026-10-08")
+        self.assertEqual(result.output, "all_reviewed=false\n")
+        self.assertIn("no reviews were applied", result.post.call_args.args[2])
+
+
+class TimezoneTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 5, 20, 30, tzinfo=timezone.utc)
+
+    def test_local_today_uses_configured_timezone(self):
+        self.assertEqual(scheduler.local_today(None, self.NOW), date(2026, 10, 5))
+        self.assertEqual(scheduler.local_today("Asia/Tokyo", self.NOW), date(2026, 10, 6))
+        self.assertEqual(
+            scheduler.local_today(
+                "America/Los_Angeles", datetime(2026, 10, 6, 3, 0, tzinfo=timezone.utc)
+            ),
+            date(2026, 10, 5),
+        )
+
+    def test_invalid_timezone_falls_back_to_utc_with_warning(self):
+        for name in ("Mars/Olympus", "../etc", 9):
+            with self.subTest(name=name):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr):
+                    self.assertEqual(scheduler.local_today(name, self.NOW), date(2026, 10, 5))
+                self.assertIn("using UTC", stderr.getvalue())
+
+    def test_preflight_writes_today_in_configured_timezone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            output_path = Path(directory) / "output"
+            config_path.write_text('{"timezone": "Asia/Tokyo", "weekend_enabled": false}')
+            self.assertEqual(review_day_preflight.load_timezone(config_path), "Asia/Tokyo")
+            with (
+                patch.object(
+                    review_day_preflight, "local_today", return_value=date(2026, 10, 6)
+                ) as local_today,
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "review_day_preflight.py",
+                        "--config",
+                        str(config_path),
+                        "--github-output",
+                        str(output_path),
+                    ],
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                review_day_preflight.main()
+            local_today.assert_called_once_with("Asia/Tokyo")
+            self.assertEqual(output_path.read_text(), "should_run=true\ntoday=2026-10-06\n")
+
+    def test_daily_scripts_use_configured_timezone_without_a_date(self):
+        config = {**CONFIG, "pause_until": "2026-12-31", "timezone": "Asia/Tokyo"}
+        with (
+            patch.object(review, "_load_config", return_value=config),
+            patch.object(review, "local_today", return_value=date(2026, 10, 6)) as local_today,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            review.run_daily()
+        local_today.assert_called_once_with("Asia/Tokyo")
+
+        with (
+            patch.object(issue_formatter, "_load_config", return_value=config),
+            patch.object(
+                issue_formatter, "local_today", return_value=date(2026, 10, 6)
+            ) as local_today,
+        ):
+            body, _ = issue_formatter.build_issue_body()
+        local_today.assert_called_once_with("Asia/Tokyo")
+        self.assertIn("2026-10-06", body)
+
+    def test_review_cli_passes_today_override(self):
+        with (
+            patch.object(review, "run_daily") as run_daily,
+            patch.object(sys, "argv", ["review.py", "--today", "2026-10-06"]),
+        ):
+            review.main()
+        run_daily.assert_called_once_with(date(2026, 10, 6))
+
+
+class WorkflowSafetyTests(unittest.TestCase):
+    WORKFLOWS = Path(__file__).parent / ".github" / "workflows"
+
+    @staticmethod
+    def job_header(workflow: str) -> str:
+        return workflow.split("    steps:", 1)[0]
+
+    @staticmethod
+    def step(workflow: str, name: str) -> str:
+        return workflow.split(f"- name: {name}", 1)[1].split("\n      - name:", 1)[0]
+
+    def test_comment_workflow_only_processes_owner_commands_on_daily_issues(self):
+        workflow = (self.WORKFLOWS / "process-review-comment.yml").read_text()
+        header = self.job_header(workflow)
+        self.assertIn("github.event.comment.author_association == 'OWNER'", header)
+        self.assertIn(
+            "startsWith(github.event.issue.title, '📚 Daily LeetCode Review')", header
+        )
+        # Closed issues still accept reviews; only closing requires an open issue.
+        self.assertNotIn("github.event.issue.state", header)
+        self.assertIn(
+            "if: steps.review.outputs.all_reviewed == 'true' && "
+            "github.event.issue.state == 'open'",
+            self.step(workflow, "Close issue if all problems reviewed"),
+        )
+        self.assertIn(
+            "if: ${{ !cancelled() }}", self.step(workflow, "Commit updated review metadata")
+        )
+
+    def test_metadata_workflows_share_a_queue_and_retry_pushes(self):
+        for name in ("main.yml", "process-review-comment.yml"):
+            with self.subTest(workflow=name):
+                workflow = (self.WORKFLOWS / name).read_text()
+                self.assertIn(
+                    "    concurrency:\n"
+                    "      group: review-metadata\n"
+                    "      cancel-in-progress: false\n"
+                    "      queue: max\n",
+                    self.job_header(workflow),
+                )
+                self.assertIn(
+                    "ref: ${{ github.ref }}", self.step(workflow, "Checkout repository")
+                )
+                commit = self.step(workflow, "Commit updated review metadata")
+                self.assertIn("git pull --rebase && git push", commit)
+                self.assertNotIn("\n          git push\n", commit)
+
+    def test_daily_workflow_commits_before_closing_older_issues(self):
+        workflow = (self.WORKFLOWS / "main.yml").read_text()
+        self.assertLess(
+            workflow.index("- name: Commit updated review metadata"),
+            workflow.index("- name: Close older daily issues"),
+        )
+        self.assertIn(
+            '--current-issue "${{ steps.issue.outputs.number }}"',
+            self.step(workflow, "Close older daily issues"),
+        )
+        self.assertIn(
+            'python scripts/review.py --today "$TODAY"',
+            self.step(workflow, "Run review script"),
+        )
 
 
 if __name__ == "__main__":
