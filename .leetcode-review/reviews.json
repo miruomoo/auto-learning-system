@@ -426,7 +426,8 @@
     "processed_submission_commits": [
       "ebbf323692b99e96a65eac797ed36cc77476179f",
       "edfa732594368f5a77cca828b8cc17eefa3ae326",
-      "a3a46621679dcd878a6d9030a8f2c57a62f69311"
+      "a3a46621679dcd878a6d9030a8f2c57a62f69311",
+      "ea690a530399e5466ec305ba355c5bc22a605dfa"
     ],
     "review_count": 4,
     "topic": "Data Structures & Algorithms"
@@ -457,7 +458,8 @@
       "6088643568"
     ],
     "processed_submission_commits": [
-      "70820a078f07abdb9a10f3134ea5786331baa347"
+      "70820a078f07abdb9a10f3134ea5786331baa347",
+      "5064053bbf2e3c15cc02ff34802889585fde3c71"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
@@ -551,7 +553,10 @@
     ],
     "processed_submission_commits": [
       "14bf7230d36004a4ca5a86ef835f7a722845f301",
-      "a745b3d5f3c413bd978040065a1866aedee7c490"
+      "a745b3d5f3c413bd978040065a1866aedee7c490",
+      "50b9c72bf5c96d0f96293302abdc0e3136150ec5",
+      "fd911a0ed3b59e5f109047220d3078564a6e1599",
+      "61f0d6c94248c71c6c4527631618a75e11d00844"
     ],
     "review_count": 2,
     "topic": "Data Structures & Algorithms"
@@ -648,7 +653,8 @@
     ],
     "processed_submission_commits": [
       "2f2590db8e1d25f12f555861b691e0cb87d977ab",
-      "b0071919711dba6d3cb5ab12f2a70c879a1224da"
+      "b0071919711dba6d3cb5ab12f2a70c879a1224da",
+      "cb1d99ac70bdb9a59cb7e77932ee0f007e8442af"
     ],
     "review_count": 2,
     "topic": "Data Structures & Algorithms"
@@ -667,7 +673,8 @@
       "6088643568"
     ],
     "processed_submission_commits": [
-      "825a75ae9368a72247a243d6dfc2fe0e3fea0299"
+      "825a75ae9368a72247a243d6dfc2fe0e3fea0299",
+      "20d161f8c5890ec6a174eeaff12ff1067200c0d8"
     ],
     "review_count": 1,
     "topic": "Data Structures & Algorithms"
@@ -741,10 +748,10 @@
   },
   "valid-sudoku": {
     "difficulty": "Medium",
-    "ease_factor": 2.65,
-    "interval": 3,
-    "last_review": "2026-10-02",
-    "next_review": "2026-10-05",
+    "ease_factor": 2.45,
+    "interval": 1,
+    "last_review": "2026-10-20",
+    "next_review": "2026-10-21",
     "processed_rating_comment_ids": [
       "5958405828"
     ],
@@ -752,7 +759,7 @@
       "20ad0be80df163d11c05b9837467516ecb4eed87",
       "fb793f5c99d97972ba3f12d97846a5c43658cd8d"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "validate-parentheses": {
