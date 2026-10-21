@@ -628,15 +628,20 @@
     "topic": "Data Structures & Algorithms"
   },
   "rotting-fruit": {
+    "completed_in_issues": [
+      81
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.4,
-    "interval": 5,
-    "last_review": "2026-10-02",
-    "next_review": "2026-10-07",
+    "ease_factor": 2.55,
+    "interval": 13,
+    "last_rated": "2026-10-21",
+    "last_review": "2026-10-21",
+    "next_review": "2026-11-03",
     "processed_rating_comment_ids": [
       "5840895714",
       "5918515022",
-      "5958405828"
+      "5958405828",
+      "6316501168"
     ],
     "processed_submission_commits": [
       "43303d6a6e00c49b61d97cd19b887dc334e0aa90",
@@ -647,7 +652,7 @@
       "5d58eb9d9138fb47408222345dfb1fe0c7ff8a97",
       "6a387b613920caf40607f32f88e38a5a86e8fb50"
     ],
-    "review_count": 4,
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "set-zeroes-in-matrix": {
