@@ -126,7 +126,7 @@ The daily workflow still starts at 05:00 UTC, so adjust the `cron` schedule in `
 
 ## Interacting with the daily review
 
-Once the daily issue is created, post a comment on it with one `review <number> <result>` line per problem. The **Process Review Comment** workflow will pick it up and reschedule the problems accordingly. You can also comment on an older or closed daily issue to review problems you deferred. A `pause <days>` line pauses the daily reviews and can be combined with review lines in the same comment.
+Once the daily issue is created, post a comment on it with one `review <number> <result>` line per problem. The **Process Review Comment** workflow will pick it up and reschedule the problems accordingly. You can also comment on an older or closed daily issue to review problems you deferred. A `pause <days>` line pauses the daily reviews and can be combined with review lines in the same comment. Pausing moves every scheduled review later by the paused days, so problems do not pile up or get auto-marked as Forgot when reviews resume; reviews rated during a pause start their interval when the pause ends. A new pause replaces the current one, and only the difference between the two end dates is applied.
 
 **Valid results:** `easy` · `medium` · `forgot` · `reset` · `remove`
 

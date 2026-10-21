@@ -8,11 +8,11 @@ Topic inference
 ---------------
 The parent folder name is used as the topic (e.g. "Data Structures & Algorithms").
 
-Difficulty inference
---------------------
-A lightweight keyword lookup against the problem ID is used to give a best-effort
-difficulty label.  The label can be overridden by storing an explicit
-``"difficulty"`` key in reviews.json.
+Difficulty
+----------
+The problem ID (NeetCode slug) is looked up in tables of NeetCode difficulties.
+Known slugs always use the NeetCode label; unknown slugs default to Medium and
+can be overridden by editing their ``"difficulty"`` key in reviews.json.
 """
 
 from __future__ import annotations
@@ -21,67 +21,186 @@ import os
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Keyword-based difficulty heuristics
+# NeetCode difficulties, keyed by NeetCode problem slug
 # ---------------------------------------------------------------------------
 
-_HARD_KEYWORDS = {
-    "maximum-path-sum",
-    "serialize-and-deserialize",
-    "sliding-window-maximum",
-    "minimum-window",
-    "alien-dictionary",
-    "trapping-rain-water",
-    "median-of-two-sorted-arrays",
-    "word-ladder",
-    "word-search",
-    "search-for-word-ii",
-    "swim-in-rising-water",
-    "cheapest-flight-path",
-    "minimum-cost-to-connect-points",
-    "min-cost-to-connect-points",
-    "distinct-subsequences",
-    "edit-distance",
-    "interleaving-string",
-    "regular-expression-matching",
-    "largest-rectangle-in-histogram",
-    "count-paths",
-    "n-queens",
-    "palindrome-partitioning-ii",
-    "burst-balloons",
-    "buy-and-sell-crypto-with-cooldown",
-    "binary-tree-from-preorder-and-inorder-traversal",
+_EASY = {
+    "balanced-binary-tree",
+    "binary-search",
+    "binary-tree-diameter",
+    "buy-and-sell-crypto",
+    "climbing-stairs",
+    "counting-bits",
+    "depth-of-binary-tree",
+    "duplicate-integer",
+    "invert-a-binary-tree",
+    "is-anagram",
+    "is-palindrome",
+    "kth-largest-integer-in-a-stream",
+    "last-stone-weight",
+    "linked-list-cycle-detection",
+    "meeting-schedule",
+    "merge-two-sorted-linked-lists",
+    "min-cost-climbing-stairs",
+    "missing-number",
+    "non-cyclical-number",
+    "number-of-one-bits",
+    "plus-one",
+    "python-hello-world",
+    "reverse-a-linked-list",
+    "reverse-bits",
+    "same-binary-tree",
+    "single-number",
+    "subtree-of-a-binary-tree",
+    "two-integer-sum",
+    "validate-parentheses",
 }
 
-_EASY_KEYWORDS = {
-    "two-integer-sum",
-    "binary-search",
-    "valid-palindrome",
-    "valid-anagram",
-    "counting-bits",
-    "climbing-stairs",
-    "same-binary-tree",
-    "balanced-binary-tree",
-    "binary-tree-diameter",
+_MEDIUM = {
+    "add-two-numbers",
+    "anagram-groups",
+    "binary-tree-from-preorder-and-inorder-traversal",
+    "binary-tree-right-side-view",
+    "buy-and-sell-crypto-with-cooldown",
+    "car-fleet",
+    "cheapest-flight-path",
+    "clone-graph",
+    "coin-change",
+    "coin-change-ii",
+    "combination-target-sum",
+    "combination-target-sum-ii",
+    "combinations-of-a-phone-number",
+    "copy-linked-list-with-random-pointer",
+    "count-connected-components",
     "count-good-nodes-in-binary-tree",
-    "invert-binary-tree",
-    "maximum-depth-of-binary-tree",
-    "buy-and-sell-crypto",
-    "single-number",
-    "reverse-bits",
-    "number-of-1-bits",
-    "missing-number",
-    "python-hello-world",
+    "count-number-of-islands",
+    "count-paths",
+    "count-squares",
+    "course-schedule",
+    "course-schedule-ii",
+    "daily-temperatures",
+    "decode-ways",
+    "design-twitter-feed",
+    "design-word-search-data-structure",
+    "eating-bananas",
+    "edit-distance",
+    "evaluate-reverse-polish-notation",
+    "find-duplicate-integer",
+    "find-minimum-in-rotated-sorted-array",
+    "find-target-in-rotated-sorted-array",
+    "gas-station",
+    "generate-parentheses",
+    "hand-of-straights",
+    "house-robber",
+    "house-robber-ii",
+    "implement-prefix-tree",
+    "insert-into-a-binary-search-tree",
+    "insert-new-interval",
+    "interleaving-string",
+    "islands-and-treasure",
+    "jump-game",
+    "jump-game-ii",
+    "k-closest-points-to-origin",
+    "kth-largest-element-in-an-array",
+    "kth-smallest-integer-in-bst",
+    "level-order-traversal-of-binary-tree",
+    "longest-common-subsequence",
+    "longest-consecutive-sequence",
+    "longest-increasing-subsequence",
+    "longest-palindromic-substring",
+    "longest-repeating-substring-with-replacement",
+    "longest-substring-without-duplicates",
+    "lowest-common-ancestor-in-binary-search-tree",
+    "lru-cache",
+    "max-area-of-island",
+    "max-water-container",
+    "maximum-product-subarray",
+    "maximum-subarray",
+    "meeting-schedule-ii",
+    "merge-intervals",
+    "merge-triplets-to-form-target",
+    "min-cost-to-connect-points",
+    "minimum-stack",
+    "multiply-strings",
+    "network-delay-time",
+    "non-overlapping-intervals",
+    "pacific-atlantic-water-flow",
+    "palindrome-partitioning",
+    "palindromic-substrings",
+    "partition-equal-subset-sum",
+    "partition-labels",
+    "permutation-string",
+    "permutations",
+    "pow-x-n",
+    "products-of-array-discluding-self",
+    "redundant-connection",
+    "remove-node-from-end-of-linked-list",
+    "reorder-linked-list",
+    "reverse-integer",
+    "rotate-matrix",
+    "rotting-fruit",
+    "search-2d-matrix",
+    "search-for-word",
+    "set-zeroes-in-matrix",
+    "spiral-matrix",
+    "string-encode-and-decode",
+    "subsets",
+    "subsets-ii",
+    "sum-of-two-integers",
+    "surrounded-regions",
+    "target-sum",
+    "task-scheduling",
+    "three-integer-sum",
+    "time-based-key-value-store",
+    "top-k-elements-in-list",
+    "two-integer-sum-ii",
+    "valid-binary-search-tree",
+    "valid-parenthesis-string",
+    "valid-sudoku",
+    "valid-tree",
+    "word-break",
 }
+
+_HARD = {
+    "binary-tree-maximum-path-sum",
+    "burst-balloons",
+    "count-subsequences",
+    "find-median-in-a-data-stream",
+    "foreign-dictionary",
+    "largest-rectangle-in-histogram",
+    "longest-increasing-path-in-matrix",
+    "median-of-two-sorted-arrays",
+    "merge-k-sorted-linked-lists",
+    "minimum-interval-including-query",
+    "minimum-window-with-characters",
+    "n-queens",
+    "reconstruct-flight-path",
+    "regular-expression-matching",
+    "reverse-nodes-in-k-group",
+    "search-for-word-ii",
+    "serialize-and-deserialize-binary-tree",
+    "sliding-window-maximum",
+    "swim-in-rising-water",
+    "trapping-rain-water",
+    "word-ladder",
+}
+
+
+def neetcode_difficulty(problem_id: str) -> str | None:
+    """Return the NeetCode difficulty of a known problem slug, or None."""
+    slug = problem_id.lower()
+    if slug in _EASY:
+        return "Easy"
+    if slug in _MEDIUM:
+        return "Medium"
+    if slug in _HARD:
+        return "Hard"
+    return None
 
 
 def infer_difficulty(problem_id: str) -> str:
-    """Best-effort difficulty from the problem slug."""
-    slug = problem_id.lower()
-    if slug in _HARD_KEYWORDS:
-        return "Hard"
-    if slug in _EASY_KEYWORDS:
-        return "Easy"
-    return "Medium"
+    """Return the NeetCode difficulty, defaulting to Medium for unknown slugs."""
+    return neetcode_difficulty(problem_id) or "Medium"
 
 
 # ---------------------------------------------------------------------------

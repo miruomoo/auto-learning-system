@@ -249,7 +249,7 @@ To pause the daily reviews, comment:
 pause <days>
 ```
 
-**Example:** `pause 7` freezes automation for 7 days (max 365). Reviews resume automatically when the pause expires.
+**Example:** `pause 7` freezes automation for 7 days (max 365) and moves every scheduled review 7 days later. Reviews resume automatically when the pause expires.
 
 ---
 

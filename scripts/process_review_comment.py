@@ -152,6 +152,56 @@ def _save_config(config: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pause helpers
+# ---------------------------------------------------------------------------
+
+
+def active_pause_until(config: dict, today: date) -> date | None:
+    """Return the end of the pause covering *today*, or None when not paused."""
+    pause_until = config.get("pause_until")
+    if not pause_until:
+        return None
+    try:
+        end = date.fromisoformat(pause_until)
+    except ValueError:
+        return None
+    return end if end >= today else None
+
+
+def remaining_pause_days(config: dict, today: date) -> int:
+    """Return how many days after *today* the active pause lasts (0 when not paused)."""
+    end = active_pause_until(config, today)
+    return (end - today).days if end else 0
+
+
+def shift_next_review(entry: dict, days: int) -> None:
+    """Move the entry's ``next_review`` by *days* (negative moves it earlier)."""
+    next_review = entry.get("next_review")
+    if days and next_review:
+        entry["next_review"] = (
+            date.fromisoformat(next_review) + timedelta(days=days)
+        ).isoformat()
+
+
+def apply_pause(
+    config: dict, reviews: dict, today: date, pause_days: int
+) -> tuple[date, int]:
+    """
+    Set ``pause_until`` on *config* and shift every review by the added pause time.
+
+    The shift is the difference between the new and the currently active pause
+    end, so re-running a pause, extending it or shortening it never double-counts.
+    Returns (pause_until, shift_days).  Both dicts are mutated in place.
+    """
+    pause_until = today + timedelta(days=pause_days)
+    shift_days = (pause_until - (active_pause_until(config, today) or today)).days
+    for entry in reviews.values():
+        shift_next_review(entry, shift_days)
+    config["pause_until"] = pause_until.isoformat()
+    return pause_until, shift_days
+
+
+# ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
 
@@ -285,6 +335,7 @@ def process_commands(
     weekend_enabled: bool = False,
     issue_date: date | None = None,
     issue_number: int | None = None,
+    pause_offset_days: int = 0,
 ) -> tuple[list[dict], list[str]]:
     """
     Apply each command to *reviews* (mutated in place).
@@ -294,6 +345,8 @@ def process_commands(
     Medium or Forgot rating is skipped when the problem was already rated on
     or after *issue_date*, so reviewing a problem in two issues does not run
     SM-2 twice.  Only the first command for a problem in a comment is applied.
+    *pause_offset_days* (the remaining pause) is added to each new
+    ``next_review`` so the interval starts counting when the pause ends.
 
     Returns:
         results  – list of result dicts; skipped commands carry a ``skipped`` reason
@@ -371,6 +424,7 @@ def process_commands(
             )
         )
         entry = reviews[problem_id]
+        shift_next_review(entry, pause_offset_days)
         if rating in _RATINGS:
             entry["last_rated"] = today.isoformat()
         _record_completion(entry, issue_number, comment_marker)
@@ -444,12 +498,19 @@ def build_reply(
     return "\n\n---\n\n".join(parts)
 
 
-def _pause_message(pause_days: int, pause_until: date) -> str:
-    return (
+def _pause_message(pause_days: int, pause_until: date, shift_days: int = 0) -> str:
+    message = (
         f"⏸️ **Reviews paused**\n\n"
         f"Automation has been paused for **{pause_days} day{'s' if pause_days != 1 else ''}**.\n"
         f"Reviews will resume on **{pause_until.isoformat()}**."
     )
+    if shift_days:
+        days = abs(shift_days)
+        direction = "later" if shift_days > 0 else "earlier"
+        message += (
+            f"\nScheduled reviews were moved **{days} day{'s' if days != 1 else ''}** {direction}."
+        )
+    return message
 
 
 def _write_all_reviewed(all_done: bool) -> None:
@@ -487,10 +548,12 @@ def main() -> None:
     # 1. Apply the pause first so it is kept even if the reviews cannot be processed
     pause_message = None
     if pause_days is not None:
-        pause_until = today + timedelta(days=pause_days)
-        config["pause_until"] = pause_until.isoformat()
+        reviews = _load_reviews()
+        pause_until, shift_days = apply_pause(config, reviews, today, pause_days)
+        if shift_days:
+            _save_reviews(reviews)
         _save_config(config)
-        pause_message = _pause_message(pause_days, pause_until)
+        pause_message = _pause_message(pause_days, pause_until, shift_days)
 
     # 2. Apply review commands using this issue's date and problem map
     results: list[dict] = []
@@ -529,6 +592,7 @@ def main() -> None:
                     weekend_enabled=config.get("weekend_enabled") is True,
                     issue_date=issue_date,
                     issue_number=args.issue_number,
+                    pause_offset_days=remaining_pause_days(config, today),
                 )
                 if results:
                     _save_reviews(reviews)

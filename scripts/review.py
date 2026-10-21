@@ -38,7 +38,7 @@ from pathlib import Path
 _HERE = Path(__file__).parent
 sys.path.insert(0, str(_HERE))
 
-from discovery import discover_problems  # noqa: E402
+from discovery import discover_problems, neetcode_difficulty  # noqa: E402
 from scheduler import days_overdue, is_due, local_today, new_entry, review_date, schedule  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -252,7 +252,10 @@ def sync_new_problems(reviews: dict, repo_root: Path, today: date) -> tuple[dict
         else:
             if existing.get("topic") in (None, "Unknown"):
                 existing["topic"] = meta["topic"]
-            if existing.get("difficulty") in (None, "Unknown"):
+            known_difficulty = neetcode_difficulty(problem_id)
+            if known_difficulty is not None:
+                existing["difficulty"] = known_difficulty
+            elif existing.get("difficulty") in (None, "Unknown"):
                 existing["difficulty"] = meta["difficulty"]
 
             if "processed_submission_commits" not in existing:

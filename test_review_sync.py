@@ -1344,6 +1344,73 @@ class ReviewCommentMainTests(unittest.TestCase):
         self.assertEqual(result.output, "all_reviewed=false\n")
         self.assertIn("no reviews were applied", result.post.call_args.args[2])
 
+    def test_pause_shifts_every_review_and_offsets_new_ratings(self):
+        self.write_reviews(
+            {
+                "first": untouched_entry(next_review="2026-10-06"),
+                "later": untouched_entry(next_review="2026-11-01"),
+            }
+        )
+        result = self.run_main(
+            "review 1 forgot\npause 3", daily_issue("2026-10-06", {"1": "first"})
+        )
+        reviews = self.reviews()
+        self.assertEqual(reviews["later"]["next_review"], "2026-11-04")
+        # Forgot schedules 1 day out, counted from the end of the pause
+        self.assertEqual(reviews["first"]["next_review"], "2026-10-10")
+        self.assertIn("moved **3 days** later", result.post.call_args.args[2])
+
+    def test_repeated_or_changed_pause_only_shifts_the_difference(self):
+        self.write_reviews({"problem": untouched_entry(next_review="2026-10-10")})
+        self.run_main("pause 5")
+        self.assertEqual(self.reviews()["problem"]["next_review"], "2026-10-15")
+        rerun = self.run_main("pause 5")
+        self.assertEqual(self.reviews()["problem"]["next_review"], "2026-10-15")
+        self.assertNotIn("moved", rerun.post.call_args.args[2])
+        self.run_main("pause 2", today=date(2026, 10, 7))
+        self.assertEqual(self.reviews()["problem"]["next_review"], "2026-10-13")
+
+    def test_expired_pause_is_not_counted_when_pausing_again(self):
+        self.config_path.write_text(json.dumps({"pause_until": "2026-10-01"}))
+        self.write_reviews({"problem": untouched_entry(next_review="2026-10-10")})
+        self.run_main("pause 4")
+        self.assertEqual(self.reviews()["problem"]["next_review"], "2026-10-14")
+
+
+class DifficultyTests(unittest.TestCase):
+    def test_neetcode_difficulties(self):
+        from discovery import infer_difficulty, neetcode_difficulty
+
+        self.assertEqual(infer_difficulty("count-good-nodes-in-binary-tree"), "Medium")
+        self.assertEqual(infer_difficulty("search-for-word"), "Medium")
+        self.assertEqual(infer_difficulty("depth-of-binary-tree"), "Easy")
+        self.assertEqual(infer_difficulty("foreign-dictionary"), "Hard")
+        self.assertIsNone(neetcode_difficulty("unknown-problem"))
+        self.assertEqual(infer_difficulty("unknown-problem"), "Medium")
+
+    def test_every_solved_problem_has_a_neetcode_difficulty(self):
+        from discovery import neetcode_difficulty
+
+        root = Path(__file__).parent / "Data Structures & Algorithms"
+        missing = [p.name for p in root.iterdir() if p.is_dir() and neetcode_difficulty(p.name) is None]
+        self.assertEqual(missing, [])
+
+    def test_sync_corrects_stored_difficulty_of_known_problems(self):
+        entry = untouched_entry(difficulty="Hard", processed_submission_commits=[])
+        with (
+            patch.object(
+                review,
+                "discover_problems",
+                return_value={"edit-distance": {**META, "difficulty": "Medium"}},
+            ),
+            patch.object(review, "_submission_events", return_value=[]),
+            patch.object(review, "_load_config", return_value=CONFIG),
+        ):
+            updated, _, _ = review.sync_new_problems(
+                {"edit-distance": entry}, Path("/repo"), date(2026, 10, 6)
+            )
+        self.assertEqual(updated["edit-distance"]["difficulty"], "Medium")
+
 
 class TimezoneTests(unittest.TestCase):
     NOW = datetime(2026, 10, 5, 20, 30, tzinfo=timezone.utc)
