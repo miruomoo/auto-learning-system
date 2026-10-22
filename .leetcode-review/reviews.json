@@ -61,7 +61,7 @@
     "completed_in_issues": [
       80
     ],
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "ease_factor": 2.7,
     "interval": 35,
     "last_rated": "2026-10-21",
@@ -165,7 +165,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "count-subsequences": {
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "ease_factor": 2.9,
     "interval": 41,
     "last_review": "2026-09-19",
@@ -246,7 +246,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "edit-distance": {
-    "difficulty": "Hard",
+    "difficulty": "Medium",
     "ease_factor": 2.9,
     "interval": 41,
     "last_review": "2026-09-18",
@@ -369,7 +369,7 @@
     "completed_in_issues": [
       81
     ],
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "ease_factor": 2.45,
     "interval": 22,
     "last_rated": "2026-10-21",
@@ -391,7 +391,8 @@
       "72c595527144e3ea447b614f5b30d8b57f63b7c1",
       "95423a5c1f72bbe7a56c5aeb7d1f10ac720b57ee",
       "efd5c6b8eca65c1c2b282cbfc2bf7c9f8ee51f4d",
-      "dc5c648b61a53c9cc098e483d52dc07ae375ceeb"
+      "dc5c648b61a53c9cc098e483d52dc07ae375ceeb",
+      "dc0a21c33a343de5d2dd95364bff56c43c915aee"
     ],
     "review_count": 8,
     "topic": "Data Structures & Algorithms"
@@ -509,7 +510,7 @@
     "completed_in_issues": [
       81
     ],
-    "difficulty": "Medium",
+    "difficulty": "Hard",
     "ease_factor": 2.6,
     "interval": 5,
     "last_rated": "2026-10-21",
@@ -523,7 +524,8 @@
     "processed_submission_commits": [
       "8c8a99fdb0739908c5f1f567121bba4fea733c3b",
       "d4d08bfd27be06e244e28bd37826c4f0e87237dd",
-      "34a6714dc519a811414a82fd6c08c86428cda08c"
+      "34a6714dc519a811414a82fd6c08c86428cda08c",
+      "014637f36b48bfeae3a17fc730af32eafffac6a2"
     ],
     "review_count": 3,
     "topic": "Data Structures & Algorithms"
@@ -626,7 +628,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "reverse-a-linked-list": {
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "ease_factor": 2.3,
     "interval": 1,
     "last_review": "2026-10-21",
@@ -660,7 +662,8 @@
       "bea0d2183089403ff2cf612e68dfb684587ec0a6",
       "9841dc749a90da933cbc1eb0f0e00dede8081cae",
       "5d58eb9d9138fb47408222345dfb1fe0c7ff8a97",
-      "6a387b613920caf40607f32f88e38a5a86e8fb50"
+      "6a387b613920caf40607f32f88e38a5a86e8fb50",
+      "3632b442069d3e21f365e20af1a17d145cf0126e"
     ],
     "review_count": 5,
     "topic": "Data Structures & Algorithms"
@@ -814,7 +817,7 @@
     "topic": "Data Structures & Algorithms"
   },
   "validate-parentheses": {
-    "difficulty": "Medium",
+    "difficulty": "Easy",
     "ease_factor": 2.4,
     "interval": 1,
     "last_review": "2026-10-21",
