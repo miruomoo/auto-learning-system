@@ -750,13 +750,18 @@
     "topic": "Data Structures & Algorithms"
   },
   "top-k-elements-in-list": {
+    "completed_in_issues": [
+      82
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.65,
-    "interval": 3,
-    "last_review": "2026-10-05",
-    "next_review": "2026-10-08",
+    "ease_factor": 2.8,
+    "interval": 8,
+    "last_rated": "2026-10-22",
+    "last_review": "2026-10-22",
+    "next_review": "2026-10-30",
     "processed_rating_comment_ids": [
-      "5955626201"
+      "5955626201",
+      "6350223146"
     ],
     "processed_submission_commits": [
       "03af1638801a0f0eedcd7111892f96157e44dad4",
@@ -764,7 +769,7 @@
       "124d375e5437368d75e27b069fe78a107555bca1",
       "be5a5e37b86204b2a9d5e0574c33ccf03e302c0e"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "two-integer-sum-ii": {
