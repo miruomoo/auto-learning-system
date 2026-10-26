@@ -230,7 +230,8 @@
       "9465942a6bbcd5e2f0d22caa7bcd921b2f7022d5",
       "da2c70f1652e6f22519e6d902f4d1c83f4a40950",
       "4f891aed35d7a88528a499142750a2c59b311c97",
-      "cc9b5ad876df64d2d24c97777d9d3d457e39800e"
+      "cc9b5ad876df64d2d24c97777d9d3d457e39800e",
+      "e2651c003692d79ea40b326fcbbd6c6a2f87794b"
     ],
     "review_count": 3,
     "topic": "Data Structures & Algorithms"
@@ -298,6 +299,18 @@
       "ededda3ece0c9eff02e9b00cbe2d9fb6b72ef9f2"
     ],
     "review_count": 1,
+    "topic": "Data Structures & Algorithms"
+  },
+  "insert-new-interval": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": "2026-10-26",
+    "next_review": "2026-10-27",
+    "processed_submission_commits": [
+      "5f8b0b9fd016e6ce3502ba612ab94c03f5faf2c5"
+    ],
+    "review_count": 0,
     "topic": "Data Structures & Algorithms"
   },
   "jump-game": {
@@ -461,6 +474,18 @@
     "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
+  "max-area-of-island": {
+    "difficulty": "Medium",
+    "ease_factor": 2.5,
+    "interval": 1,
+    "last_review": "2026-10-24",
+    "next_review": "2026-10-26",
+    "processed_submission_commits": [
+      "cac089ce83495883da16cac72c1231003ceeaee4"
+    ],
+    "review_count": 0,
+    "topic": "Data Structures & Algorithms"
+  },
   "max-water-container": {
     "completed_in_issues": [
       69
@@ -563,7 +588,8 @@
       "2139db4f981a13cc0317203eb568c1bbdb07acd7",
       "5c37b8bf3a492cdf137caaa3bf97e0f653e2fd18",
       "bca72976d0e6bbd2d24f8ae2b08cb0fd214309a5",
-      "633498d3e0253ff82a8f624d249b4e6ddd1da5b8"
+      "633498d3e0253ff82a8f624d249b4e6ddd1da5b8",
+      "0b0e98fba7c93afc258aa47385e2fce372f6897b"
     ],
     "review_count": 6,
     "topic": "Data Structures & Algorithms"
@@ -829,7 +855,8 @@
     ],
     "processed_submission_commits": [
       "1e6e276968725ef2531fadb92c22769069153623",
-      "3bfa02277ea552f7627317800fae5f6eebfa7d37"
+      "3bfa02277ea552f7627317800fae5f6eebfa7d37",
+      "c2819241fa3850bc31ed21bb6613d8e733486291"
     ],
     "review_count": 2,
     "topic": "Data Structures & Algorithms"
