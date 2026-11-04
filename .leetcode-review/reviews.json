@@ -308,27 +308,41 @@
     "topic": "Data Structures & Algorithms"
   },
   "house-robber": {
+    "completed_in_issues": [
+      90
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.3,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.45,
+    "interval": 2,
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-06",
+    "processed_rating_comment_ids": [
+      "6622308970"
+    ],
     "processed_submission_commits": [
       "84baef510ae7c8a426efe5e976048f9cc40a657b"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "implement-prefix-tree": {
+    "completed_in_issues": [
+      90
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.3,
+    "ease_factor": 2.1,
     "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-05",
+    "processed_rating_comment_ids": [
+      "6622308970"
+    ],
     "processed_submission_commits": [
       "ededda3ece0c9eff02e9b00cbe2d9fb6b72ef9f2"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "insert-new-interval": {
@@ -368,15 +382,22 @@
     "topic": "Data Structures & Algorithms"
   },
   "kth-largest-element-in-an-array": {
+    "completed_in_issues": [
+      90
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.3,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.45,
+    "interval": 2,
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-06",
+    "processed_rating_comment_ids": [
+      "6622308970"
+    ],
     "processed_submission_commits": [
       "8f9d76964cf2bd46a9625e0b0e9c36e3da96ad8e"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "largest-rectangle-in-histogram": {
