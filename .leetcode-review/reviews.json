@@ -26,19 +26,24 @@
     "topic": "Data Structures & Algorithms"
   },
   "binary-tree-right-side-view": {
+    "completed_in_issues": [
+      91
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.6,
+    "interval": 3,
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-09",
     "processed_rating_comment_ids": [
-      "5974596403"
+      "5974596403",
+      "6642184967"
     ],
     "processed_submission_commits": [
       "86054e4d563da1cd63038b5a3af8882c22079e17",
       "9750c0fc5c7d9f87e22cae594b56bf5135916a0d"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "burst-balloons": {
@@ -577,15 +582,22 @@
     "topic": "Data Structures & Algorithms"
   },
   "maximum-product-subarray": {
+    "completed_in_issues": [
+      91
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.3,
+    "ease_factor": 2.1,
     "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-05",
+    "processed_rating_comment_ids": [
+      "6642184967"
+    ],
     "processed_submission_commits": [
       "fdba9320befd5f1c51e4c8b13866d3f2873f6b0f"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "merge-intervals": {
@@ -692,15 +704,22 @@
     "topic": "Data Structures & Algorithms"
   },
   "permutations": {
+    "completed_in_issues": [
+      91
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.3,
+    "ease_factor": 2.1,
     "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "last_rated": "2026-11-04",
+    "last_review": "2026-11-04",
+    "next_review": "2026-11-05",
+    "processed_rating_comment_ids": [
+      "6642184967"
+    ],
     "processed_submission_commits": [
       "95d75dde8183cbc99359f58f36746bba48ab9b67"
     ],
-    "review_count": 1,
+    "review_count": 2,
     "topic": "Data Structures & Algorithms"
   },
   "products-of-array-discluding-self": {
