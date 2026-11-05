@@ -371,17 +371,19 @@
   "jump-game": {
     "completed_in_issues": [
       68,
-      85
+      85,
+      92
     ],
     "difficulty": "Medium",
-    "ease_factor": 2.8,
-    "interval": 8,
-    "last_rated": "2026-10-28",
-    "last_review": "2026-10-28",
-    "next_review": "2026-11-05",
+    "ease_factor": 2.95,
+    "interval": 24,
+    "last_rated": "2026-11-05",
+    "last_review": "2026-11-05",
+    "next_review": "2026-11-30",
     "processed_rating_comment_ids": [
       "6072289737",
-      "6459204158"
+      "6459204158",
+      "6670875234"
     ],
     "processed_submission_commits": [
       "ae6a5cc2d0cc880852fdb4f499890276cb67d189",
@@ -389,7 +391,7 @@
       "ad1f941e0c62a445128da16d4d27557015898572",
       "8696e640935d3ba2e25c35b369aeb64146eeed73"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "kth-largest-element-in-an-array": {
