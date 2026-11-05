@@ -442,19 +442,24 @@
     "topic": "Data Structures & Algorithms"
   },
   "level-order-traversal-of-binary-tree": {
+    "completed_in_issues": [
+      92
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.6,
+    "interval": 3,
+    "last_rated": "2026-11-05",
+    "last_review": "2026-11-05",
+    "next_review": "2026-11-09",
     "processed_rating_comment_ids": [
-      "5974596403"
+      "5974596403",
+      "6670707571"
     ],
     "processed_submission_commits": [
       "76e05462a11eb5de561c38078f7564e9c4f18f23",
       "b71ae0c4b4c34c3424e9e98dab9499d80a88b956"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "longest-increasing-path-in-matrix": {
@@ -490,35 +495,45 @@
     "topic": "Data Structures & Algorithms"
   },
   "longest-substring-without-duplicates": {
+    "completed_in_issues": [
+      92
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.6,
+    "interval": 3,
+    "last_rated": "2026-11-05",
+    "last_review": "2026-11-05",
+    "next_review": "2026-11-09",
     "processed_rating_comment_ids": [
-      "5974596403"
+      "5974596403",
+      "6670707571"
     ],
     "processed_submission_commits": [
       "b5fae662d80a166438da46b8c09a68107f076424",
       "e7602e27b5494acfdfd04ce70006c257e654790d"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "lowest-common-ancestor-in-binary-search-tree": {
+    "completed_in_issues": [
+      92
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.45,
-    "interval": 1,
-    "last_review": "2026-10-21",
-    "next_review": "2026-10-22",
+    "ease_factor": 2.6,
+    "interval": 3,
+    "last_rated": "2026-11-05",
+    "last_review": "2026-11-05",
+    "next_review": "2026-11-09",
     "processed_rating_comment_ids": [
-      "5974596403"
+      "5974596403",
+      "6670707571"
     ],
     "processed_submission_commits": [
       "2a45f9a70108e6fa0230e48f646654699f0f30b2",
       "5ef2f4b4aee48a179e70bd2ad139bb0478262cd9"
     ],
-    "review_count": 2,
+    "review_count": 3,
     "topic": "Data Structures & Algorithms"
   },
   "lru-cache": {
