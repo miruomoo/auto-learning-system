@@ -585,18 +585,20 @@
   },
   "max-water-container": {
     "completed_in_issues": [
-      69
+      69,
+      94
     ],
     "difficulty": "Medium",
-    "ease_factor": 2.75,
-    "interval": 14,
-    "last_rated": "2026-10-09",
-    "last_review": "2026-10-09",
-    "next_review": "2026-10-23",
+    "ease_factor": 2.9,
+    "interval": 41,
+    "last_rated": "2026-11-10",
+    "last_review": "2026-11-10",
+    "next_review": "2026-12-21",
     "processed_rating_comment_ids": [
       "5819457298",
       "5918515022",
-      "6088643568"
+      "6088643568",
+      "6759590332"
     ],
     "processed_submission_commits": [
       "ebbf323692b99e96a65eac797ed36cc77476179f",
@@ -604,7 +606,7 @@
       "a3a46621679dcd878a6d9030a8f2c57a62f69311",
       "ea690a530399e5466ec305ba355c5bc22a605dfa"
     ],
-    "review_count": 4,
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "maximum-product-subarray": {
@@ -651,19 +653,21 @@
   "merge-k-sorted-linked-lists": {
     "completed_in_issues": [
       81,
-      84
+      84,
+      94
     ],
     "difficulty": "Hard",
-    "ease_factor": 2.75,
-    "interval": 14,
-    "last_rated": "2026-10-26",
-    "last_review": "2026-10-26",
-    "next_review": "2026-11-09",
+    "ease_factor": 2.9,
+    "interval": 41,
+    "last_rated": "2026-11-10",
+    "last_review": "2026-11-10",
+    "next_review": "2026-12-21",
     "processed_rating_comment_ids": [
       "5983630264",
       "6010170968",
       "6320365531",
-      "6427617196"
+      "6427617196",
+      "6759590332"
     ],
     "processed_submission_commits": [
       "8c8a99fdb0739908c5f1f567121bba4fea733c3b",
@@ -672,7 +676,7 @@
       "014637f36b48bfeae3a17fc730af32eafffac6a2",
       "9150e7d78f91e5d64d529123d71af95f64e38e3e"
     ],
-    "review_count": 4,
+    "review_count": 5,
     "topic": "Data Structures & Algorithms"
   },
   "network-delay-time": {
@@ -779,18 +783,20 @@
   },
   "reorder-linked-list": {
     "completed_in_issues": [
-      82
+      82,
+      94
     ],
     "difficulty": "Medium",
-    "ease_factor": 2.4,
-    "interval": 3,
-    "last_rated": "2026-10-22",
-    "last_review": "2026-10-22",
-    "next_review": "2026-10-26",
+    "ease_factor": 2.55,
+    "interval": 8,
+    "last_rated": "2026-11-10",
+    "last_review": "2026-11-10",
+    "next_review": "2026-11-18",
     "processed_rating_comment_ids": [
       "5983630264",
       "6010170968",
-      "6352433546"
+      "6352433546",
+      "6759590332"
     ],
     "processed_submission_commits": [
       "fb27922d71c771714243bd9596d0b2c733ca0357",
@@ -798,7 +804,7 @@
       "a2d8b8df07772281ee028ae76c68db5d1d23f7a8",
       "1edd4aff6d765caae11b9e9d5d80117b6add1945"
     ],
-    "review_count": 3,
+    "review_count": 4,
     "topic": "Data Structures & Algorithms"
   },
   "reverse-a-linked-list": {
