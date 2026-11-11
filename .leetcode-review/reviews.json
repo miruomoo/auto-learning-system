@@ -572,15 +572,22 @@
     "topic": "Data Structures & Algorithms"
   },
   "max-area-of-island": {
+    "completed_in_issues": [
+      96
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.5,
-    "interval": 1,
-    "last_review": "2026-10-24",
-    "next_review": "2026-10-26",
+    "ease_factor": 2.65,
+    "interval": 3,
+    "last_rated": "2026-11-11",
+    "last_review": "2026-11-11",
+    "next_review": "2026-11-16",
+    "processed_rating_comment_ids": [
+      "6809991787"
+    ],
     "processed_submission_commits": [
       "cac089ce83495883da16cac72c1231003ceeaee4"
     ],
-    "review_count": 0,
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "max-water-container": {
