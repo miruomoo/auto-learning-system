@@ -359,15 +359,22 @@
     "topic": "Data Structures & Algorithms"
   },
   "insert-new-interval": {
+    "completed_in_issues": [
+      96
+    ],
     "difficulty": "Medium",
-    "ease_factor": 2.5,
+    "ease_factor": 2.3,
     "interval": 1,
-    "last_review": "2026-10-26",
-    "next_review": "2026-10-27",
+    "last_rated": "2026-11-12",
+    "last_review": "2026-11-12",
+    "next_review": "2026-11-13",
+    "processed_rating_comment_ids": [
+      "6810829979"
+    ],
     "processed_submission_commits": [
       "5f8b0b9fd016e6ce3502ba612ab94c03f5faf2c5"
     ],
-    "review_count": 0,
+    "review_count": 1,
     "topic": "Data Structures & Algorithms"
   },
   "jump-game": {
