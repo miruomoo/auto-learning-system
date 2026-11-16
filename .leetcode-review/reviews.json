@@ -478,18 +478,20 @@
   },
   "longest-increasing-path-in-matrix": {
     "completed_in_issues": [
-      81
+      81,
+      98
     ],
     "difficulty": "Hard",
-    "ease_factor": 2.45,
-    "interval": 22,
-    "last_rated": "2026-10-21",
-    "last_review": "2026-10-21",
-    "next_review": "2026-11-12",
+    "ease_factor": 2.6,
+    "interval": 57,
+    "last_rated": "2026-11-16",
+    "last_review": "2026-11-16",
+    "next_review": "2027-01-12",
     "processed_rating_comment_ids": [
       "5809039567",
       "5897213242",
-      "6320365531"
+      "6320365531",
+      "6910008744"
     ],
     "processed_submission_commits": [
       "453a1faed00e11e4869c67cb97c0783982bc44ae",
@@ -505,7 +507,7 @@
       "dc5c648b61a53c9cc098e483d52dc07ae375ceeb",
       "dc0a21c33a343de5d2dd95364bff56c43c915aee"
     ],
-    "review_count": 8,
+    "review_count": 9,
     "topic": "Data Structures & Algorithms"
   },
   "longest-substring-without-duplicates": {
