@@ -4,41 +4,39 @@
 
 ---
 
+## Overview
+
+I built this project to help me retain data structures and algorithms concepts after solving problems. Spaced repetition schedules harder problems sooner and familiar ones later, encouraging regular recall and long-term retention.
+
+The system uses Python and GitHub Actions to track coding-problem submissions, schedule reviews, and deliver them as daily GitHub Issues.
+
+**Highlights**
+- Organizes solutions by topic and problem, with support for multiple languages.
+- Detects new submissions and adds problems to a spaced-repetition schedule.
+- Creates daily review issues and updates schedules from review feedback.
+- Supports configurable timezones, optional weekend reviews, and pauses.
+
+## Get started
+
+Fork this repository to your GitHub account, then clone your fork:
+
+```bash
+git clone https://github.com/<your-username>/auto-learning-system.git
+cd auto-learning-system
+```
+
+Add solutions under the topic and problem folders, then commit and push them to your fork. Enable GitHub Actions and Issues so the workflows can create review issues and update your schedule.
+
+> **NeetCode integration:** Enable GitHub integration in [NeetCode](https://neetcode.io/) and connect it to your study repository to automatically sync submissions. This lets the review workflows discover new submissions without manually copying solution files.
+
 ## How it works
 
-Solutions are stored in this repository organised by topic and problem ID. Two GitHub Actions workflows drive the review loop:
+Solutions are organized by topic and problem ID. Two GitHub Actions workflows handle the review cycle:
 
-### 1. Daily LeetCode Review (`main.yml`)
+1. **Daily review (`main.yml`)** runs at 5:00 AM UTC. It finds due problems, updates review metadata, and creates or updates a daily GitHub Issue. Runs are limited to weekdays by default; the timezone and weekend policy are configurable.
+2. **Review feedback (`process-review-comment.yml`)** processes the repository owner's `review` and `pause` commands on daily review issues. Ratings update the spaced-repetition schedule, and completed issues are closed automatically.
 
-Runs automatically at **5:00 AM UTC every day**. A preflight check picks the review day in the [configured timezone](#timezone) (UTC by default), enables Monday–Friday runs by default and enables Saturday/Sunday runs only when weekend reviews are configured. Manual `workflow_dispatch` runs follow the same policy.
-
-1. **`scripts/review.py`** — consumes new submission commits and determines which problems are due, then updates `.leetcode-review/reviews.json`.
-2. **`scripts/issue_formatter.py`** — reads the synchronized metadata and formats the day's review set into a GitHub Issue body.
-3. A GitHub Issue titled `📚 Daily LeetCode Review — YYYY-MM-DD` is created (or updated if one already exists for today).
-4. Updated review metadata is committed back to the repository.
-5. On an unpaused day, older open issues with the same daily-review title prefix are closed with an automated comment: as superseded by today's issue when there are reviews, or because nothing is scheduled on an empty day. Today's issue and unrelated issues remain open. Closed daily issues still accept review comments.
-
-### Submission tracking and migration
-
-`system_start_date` applies to individual submission events, not entire problems. A problem with older imported files begins tracking when its first `submission-N` file is committed on or after the cutoff. Eligible commits are consumed chronologically and their commit identities are stored in `processed_submission_commits`, so same-day submissions remain distinct and workflow reruns are idempotent.
-
-An automatically detected submission records completion by setting `last_review` to the UTC submission date and `next_review` to that date plus the current interval, applying the configured weekend policy. It does not change the interval, ease factor, or review count. Explicit `Easy`, `Medium`, and `Forgot` issue comments remain responsible for SM-2 interval and ease-factor changes, and each comment is applied at most once using its GitHub comment ID.
-
-On the first run after upgrading, entries with established review progress keep their existing schedule, difficulty, and topic; currently eligible commits are marked as already processed instead of replayed. Untouched legacy entries are rebuilt only from eligible submissions, and imported entries with no eligible submission are excluded. If Git history cannot be read, that problem's metadata is left unchanged and the error is reported.
-
-### 2. Process Review Comment (`process-review-comment.yml`)
-
-Triggered when the repository owner posts a comment containing `review` or `pause` on a daily review issue, whether the issue is open or closed. Comments from other users are ignored.
-
-1. **`scripts/process_review_comment.py`** — applies the `pause` command and the `review` commands in the comment (both can appear in the same comment), updates `.leetcode-review/config.json` and the spaced-repetition schedule in `.leetcode-review/reviews.json`, and posts one reply with the results. If the reply cannot be posted, the run only logs a warning, so the updates are still saved.
-2. Updated review metadata is committed back to the repository.
-3. If the issue is open and every required problem in it has been completed, the issue is closed.
-
-A problem counts as completed for an issue once a `review` command for it has been processed from that issue (including `reset`), once it has been removed from the review pool, or when its last review is on or after the issue's date, so reviews that continue past midnight still count.
-
-An `easy`, `medium`, or `forgot` rating is skipped, and reported in the reply, if the problem was already rated on or after the issue's date (for example, a deferred problem rated in both yesterday's and today's issue), so the interval does not grow twice. To rate it again anyway, comment `review <number> reset` first. Repeated commands for the same problem in one comment are also reported as skipped.
-
-Both workflows share one `review-metadata` concurrency queue, so review metadata is updated by one run at a time, and they rebase and retry if a push is rejected.
+Both workflows serialize metadata updates to prevent conflicting changes. New submission commits mark a problem as completed without changing its SM-2 rating; review feedback controls interval and ease-factor changes.
 
 ---
 
@@ -124,9 +122,9 @@ The daily workflow still starts at 05:00 UTC, so adjust the `cron` schedule in `
 
 ---
 
-## Interacting with the daily review
+## Review commands
 
-Once the daily issue is created, post a comment on it with one `review <number> <result>` line per problem. The **Process Review Comment** workflow will pick it up and reschedule the problems accordingly. You can also comment on an older or closed daily issue to review problems you deferred. A `pause <days>` line pauses the daily reviews and can be combined with review lines in the same comment. Pausing moves every scheduled review later by the paused days, so problems do not pile up or get auto-marked as Forgot when reviews resume; reviews rated during a pause start their interval when the pause ends. A new pause replaces the current one, and only the difference between the two end dates is applied.
+Comment on a daily review issue with one `review <number> <result>` line per problem. You can also review problems from older or closed daily issues. Use `pause <days>` to pause reviews; it can be combined with review commands in the same comment.
 
 **Valid results:** `easy` · `medium` · `forgot` · `reset` · `remove`
 
@@ -137,3 +135,5 @@ Once the daily issue is created, post a comment on it with one `review <number> 
 | `forgot` | Could not solve or had to look at the solution                                           |
 | `reset`  | Restart spaced-repetition from scratch (resets interval to 1 day)                       |
 | `remove` | Remove from the review pool entirely (re-added automatically when re-discovered)         |
+
+Only the repository owner's commands are processed. Ratings already applied for a problem on or after that issue's date are skipped to avoid increasing the interval twice; use `review <number> reset` to rate it again.
